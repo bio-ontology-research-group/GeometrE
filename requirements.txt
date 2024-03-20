@@ -1,0 +1,6 @@
+wandb
+scikit-learn
+tqdm
+mowl-borg
+requests
+wget
