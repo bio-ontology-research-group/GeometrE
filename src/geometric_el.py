@@ -8,6 +8,7 @@ from evaluators import RelationEvaluator
 from tqdm import tqdm
 from mowl.nn import ELEmModule, ELBoxModule, BoxSquaredELModule
 import torch as th
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CyclicLR
 import torch.nn.functional as F
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 # handler = logging.StreamHandler()
 # logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+
+th.autograd.set_detect_anomaly(True)
 
 @ck.command()
 @ck.option("--dataset_name", "-ds", type=ck.Choice(["goslim", "go", "goplus"]), default="goslim")
@@ -119,6 +122,11 @@ class GeometricELModel(EmbeddingELModel):
                                       len(self.dataset.object_properties),
                                       self.embed_dim,
                                       module_margin)
+
+        self.module.trans_slack = nn.Parameter(th.randn(1))
+        self.module.inv_slack = nn.Parameter(th.randn(1))
+        self.module.sub_slack = nn.Parameter(th.randn(1))
+        
         self.evaluator = evaluator_resolver(evaluator_name, dataset, device)
         self.learning_rate = learning_rate
         self.epochs = epochs
@@ -171,32 +179,35 @@ class GeometricELModel(EmbeddingELModel):
 
     def rbox_forward(self, *args, **kwargs):
         num_samples = 100
-        samples = th.rand(num_samples, self.embed_dim, device=self.device).unsqueeze(0)
+        # samples = th.rand(num_samples, self.embed_dim, device=self.device).unsqueeze(0)
 
         ####
         subobjectproperty = self.rbox_data["subobjectproperty"].to(self.device)
         subs = self.module.rel_embed(subobjectproperty[:, 0])
         sups = self.module.rel_embed(subobjectproperty[:, 1])
         
-        target_sub = samples + subs.unsqueeze(1)
-        target_sup = samples + sups.unsqueeze(1)
+        target_sub = subs.unsqueeze(1)
+        target_sup = sups.unsqueeze(1)
+
+        sub_loss = th.linalg.norm(target_sub + self.module.sub_slack - target_sup, dim=-1).mean()
         
-        loss = th.linalg.norm(target_sub - target_sup, dim=-1).mean()
+        loss = sub_loss
 
         ###
         inverseproperty = self.rbox_data["inverseproperty"].to(self.device)
         firsts = self.module.rel_embed(inverseproperty[:, 0])
         seconds = self.module.rel_embed(inverseproperty[:, 1])
-        diff = th.linalg.norm(firsts + seconds, dim=-1).mean()
+        diff = th.linalg.norm(firsts + self.module.inv_slack  + seconds, dim=-1).mean() 
         loss += diff
 
         ###
-        # transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
-        # prop = self.module.rel_embed(transitiveproperty)
-        # prop = prop.unsqueeze(1)
-        # target = samples + prop
-        # target2 = target + prop
-        # loss += th.linalg.norm(target - target2, dim=-1).mean()
+        transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
+        prop = self.module.rel_embed(transitiveproperty)
+        prop = prop.unsqueeze(1)
+        target = prop
+        target2 = 2*prop
+        trans = th.linalg.norm(target + self.module.trans_slack - target2, dim=-1).mean()
+        loss += trans
         
         return loss
         
