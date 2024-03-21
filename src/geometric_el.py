@@ -46,8 +46,20 @@ def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
     else:
         wandb_logger = wandb.init(project="onto-r", group="f{dataset_name}_{module_name}_{evaluator_name}", name=wandb_description)
 
-    
-    wandb_logger.log({"dataset_name": dataset_name,
+        from_sweep = True
+
+        if from_sweep:
+            dataset_name = wandb.config.dataset_name
+            module_name = wandb.config.module_name
+            evaluator_name = wandb.config.evaluator_name
+            embed_dim = wandb.config.embed_dim
+            batch_size = wandb.config.batch_size
+            module_margin = wandb.config.module_margin
+            loss_margin = wandb.config.loss_margin
+            learning_rate = wandb.config.learning_rate
+
+        else:
+            wandb_logger.log({"dataset_name": dataset_name,
                       "module_name": module_name,
                       "evaluator_name": evaluator_name,
                       "embed_dim": embed_dim,
@@ -64,7 +76,7 @@ def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
     model_dir = f"{root_dir}/models/"
     os.makedirs(model_dir, exist_ok=True)
 
-    model_filepath = f"{model_dir}/{module_name}_{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}.pt"
+    model_filepath = f"{model_dir}/{module_name}_{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{rbox_loss}.pt"
     model = GeometricELModel(module_name, evaluator_name, dataset, batch_size,
                              embed_dim, module_margin, loss_margin,
                              learning_rate, model_filepath,
@@ -191,12 +203,12 @@ class GeometricELModel(EmbeddingELModel):
         loss += diff
 
         ###
-        # transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
-        # prop = self.module.rel_embed(transitiveproperty)
-        # prop = prop.unsqueeze(1)
-        # target = samples + prop
-        # target2 = target + prop
-        # loss += th.linalg.norm(target - target2, dim=-1).mean()
+        transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
+        prop = self.module.rel_embed(transitiveproperty)
+        prop = prop.unsqueeze(1)
+        target = samples + prop
+        target2 = target + prop
+        loss += th.linalg.norm(target - target2, dim=-1).mean()
         
         return loss
         
