@@ -1,6 +1,6 @@
 wandb
 scikit-learn
 tqdm
-mowl-borg
+git+https://github.com/bio-ontology-research-group/mowl@21e1a14
 requests
 wget
