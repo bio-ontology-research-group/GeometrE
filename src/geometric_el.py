@@ -186,19 +186,23 @@ class GeometricELModel(EmbeddingELModel):
         subs = self.module.rel_embed(subobjectproperty[:, 0])
         sups = self.module.rel_embed(subobjectproperty[:, 1])
         
-        target_sub = subs.unsqueeze(1)
-        target_sup = sups.unsqueeze(1)
-
-        sub_loss = th.linalg.norm(target_sub + self.module.sub_slack - target_sup, dim=-1).mean()
+        euc_dist = th.linalg.norm(subs - sups, dim=-1)
+        euc_loss = th.relu(euc_dist - th.abs(self.module.sub_slack)).mean()
+        sim = th.sum(subs * sups, dim=-1)
+        sim_loss = (1 - th.sigmoid(sim)).mean()
         
-        loss = sub_loss
+        loss = euc_loss + sim_loss
 
         ###
         inverseproperty = self.rbox_data["inverseproperty"].to(self.device)
         firsts = self.module.rel_embed(inverseproperty[:, 0])
         seconds = self.module.rel_embed(inverseproperty[:, 1])
-        diff = th.linalg.norm(firsts + self.module.inv_slack  + seconds, dim=-1).mean() 
-        loss += diff
+        euc_dist = th.linalg.norm(firsts + seconds, dim=-1)
+        euc_loss = th.relu(euc_dist - th.abs(self.module.inv_slack)).mean()
+        sim = th.sum(firsts * seconds, dim=-1)
+        sim_loss = (th.sigmoid(sim)).mean()
+        
+        loss += euc_loss + sim_loss
 
         ###
         transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
@@ -206,8 +210,12 @@ class GeometricELModel(EmbeddingELModel):
         prop = prop.unsqueeze(1)
         target = prop
         target2 = 2*prop
-        trans = th.linalg.norm(target + self.module.trans_slack - target2, dim=-1).mean()
-        loss += trans
+        euc_dist = th.linalg.norm(target - target2, dim=-1)
+        euc_loss = th.relu(euc_dist - th.abs(self.module.trans_slack)).mean()
+        sim = th.sum(target * target2, dim=-1)
+        sim_loss = (1 - th.sigmoid(sim)).mean()
+
+        loss += euc_loss + sim_loss
         
         return loss
         
