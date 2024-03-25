@@ -3,6 +3,8 @@ from utils import FastTensorDataLoader
 import torch as th
 from tqdm import tqdm
 import numpy as np
+from org.semanticweb.owlapi.model.parameters import Imports
+from org.semanticweb.owlapi.model import AxiomType as Ax
 
 class Evaluator:
     def __init__(self, dataset, device):
@@ -26,9 +28,39 @@ class Evaluator:
         raise NotImplementedError
 
     
+    
 class RelationEvaluator(Evaluator):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def get_relation_properties(self):
+        rbox_axioms = self.dataset.ontology.getRBoxAxioms(Imports.fromBoolean(True))
+        subproperties = []
+        superproperties = []
+        inverse_properties = []
+        transitive_properties = []
+        
+        for axiom in rbox_axioms:
+            axiom_type = axiom.getAxiomType()
+            if axiom_type == Ax.SUB_OBJECT_PROPERTY:
+                
+                sub = axiom.getSubProperty()
+                sup = axiom.getSuperProperty()
+                subproperties.append(str(sub.toStringID()))
+                superproperties.append(str(sup.toStringID()))
+                                
+            elif axiom_type == Ax.INVERSE_OBJECT_PROPERTIES:
+                first = axiom.getFirstProperty()
+                second = axiom.getSecondProperty()
+
+                inverse_properties.append(str(first.toStringID()))
+                inverse_properties.append(str(second.toStringID()))
+                                
+            elif axiom_type == Ax.TRANSITIVE_OBJECT_PROPERTY:
+                property_ = axiom.getProperty()
+                transitive_properties.append(str(property_.toStringID()))
+                         
+        return subproperties, superproperties, inverse_properties, transitive_properties
 
         
     def create_triples(self, ontology):
@@ -63,7 +95,7 @@ class RelationEvaluator(Evaluator):
         filtering_labels = th.ones((num_entities, num_entities), dtype=th.float)
 
         for head, rel, tail in filtering_triples:
-            filtering_labels[head, tail] = 1000
+            filtering_labels[head, tail] = 10000
         
         return filtering_labels
     
@@ -199,7 +231,27 @@ class RelationEvaluator(Evaluator):
 
                 
         return average_metrics
-            
+
+
+    def evaluate_by_property(self, model):
+        model.eval()
+        subproperties, superproperties, inverse_properties, transitive_properties = self.get_relation_properties()
+        metrics = dict()
+        metrics["subproperties"] = self.evaluate(model, relations_to_evaluate=subproperties, mode="test")
+        metrics["superproperties"] = self.evaluate(model, relations_to_evaluate=superproperties, mode="test")
+        metrics["inverse_properties"] = self.evaluate(model, relations_to_evaluate=inverse_properties, mode="test")
+        metrics["transitive_properties"] = self.evaluate(model, relations_to_evaluate=transitive_properties, mode="test")
+
+        print("Subproperties")
+        print(metrics["subproperties"])
+        print("Superproperties")
+        print(metrics["superproperties"])
+        print("Inverse properties")
+        print(metrics["inverse_properties"])
+        print("Transitive properties")
+        print(metrics["transitive_properties"])
+        
+        
 
 def compute_rank_roc(ranks, num_entities):
     n_tails = num_entities

@@ -30,7 +30,7 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--module_name", "-m", default="elem", help="Module to use")
 @ck.option("--evaluator_name", "-e", default="relation", help="Evaluator to use")
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
-@ck.option("--batch_size", "-b", default=512, help="Batch size")
+@ck.option("--batch_size", "-bs", default=512, help="Batch size")
 @ck.option("--module_margin", "-mm", default=0.01, help="Margin for the module")
 @ck.option("--loss_margin", "-lm", default=0.01, help="Margin for the loss function")
 @ck.option("--learning_rate", "-lr", default=0.0001, help="Learning rate")
@@ -40,10 +40,13 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--device", "-d", default="cuda", help="Device to use")
 @ck.option("--wandb_description", "-desc", default="default")
 @ck.option("--no_wandb", "-nw", is_flag=True)
+@ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
          module_margin, loss_margin, learning_rate, epochs, rbox_loss, evaluate_every,
-         device, wandb_description, no_wandb):
+         device, wandb_description, no_wandb, only_test):
 
+    # only_test = True
+    
     if no_wandb:
         wandb_logger = DummyLogger()
     else:
@@ -84,10 +87,18 @@ def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
                              embed_dim, module_margin, loss_margin,
                              learning_rate, model_filepath,
                              epochs, rbox_loss, evaluate_every, device, wandb_logger)
-    model.train()
+
+    
+    if not only_test:
+        model.train()
+        
     metrics = model.test()
     for metric, value in metrics.items():
         print(f"{metric}: {value}")
+
+    # model.test_by_property()
+
+        
     wandb_logger.log(metrics)
         
 
@@ -228,6 +239,11 @@ class GeometricELModel(EmbeddingELModel):
         sim_loss = (1 - th.sigmoid(sim)).mean()
 
         loss += euc_loss + sim_loss
+
+        reg_factor =1
+        reg = th.abs(th.linalg.norm(self.module.rel_embed.weight, axis=1) - reg_factor).mean()
+        loss += reg
+
         
         return loss
         
@@ -334,9 +350,17 @@ class GeometricELModel(EmbeddingELModel):
 
     def test(self):
         self.module.load_state_dict(th.load(self.model_filepath))
+        self.module.to(self.device)
         self.module.eval()
+        
         return self.evaluator.evaluate(self.module)
 
+
+    def test_by_property(self):
+        self.module.load_state_dict(th.load(self.model_filepath))
+        self.module.to(self.device)
+        self.module.eval()
+        return self.evaluator.evaluate_by_property(self.module)
 
 
 class DummyLogger():
