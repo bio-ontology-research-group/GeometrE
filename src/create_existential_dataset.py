@@ -20,7 +20,7 @@ logger.setLevel(logging.INFO)
     
 @ck.command()
 @ck.option("--input_ontology", "-i", type=ck.Path(exists=True), required=True)
-@ck.option("--percentage", "-p", type=float, default=0.1)
+@ck.option("--percentage", "-p", type=float, default=0.3)
 @ck.option("--random_seed", "-seed", type=int, default=0)
 def main(input_ontology, percentage, random_seed):
     """Remove axioms from an ontology. It will remove subclass axioms of
@@ -72,7 +72,7 @@ def main(input_ontology, percentage, random_seed):
     for rel_str, axioms in relations_axioms.items():
         num_axioms = len(axioms)
         random.shuffle(axioms)
-        axioms_to_remove = axioms[:int(num_axioms*percentage*2)]
+        axioms_to_remove = axioms[:int(num_axioms*percentage)]
         removed_axioms[rel_str] = axioms_to_remove
         axioms_to_remove_j = HashSet()
         axioms_to_remove_j.addAll(axioms_to_remove)
@@ -83,7 +83,7 @@ def main(input_ontology, percentage, random_seed):
     valid_axioms = HashSet()
     test_axioms = HashSet()
     for rel_str, axioms in removed_axioms.items():
-        num_axioms = len(axioms)//2
+        num_axioms = len(axioms)//3
         valid_axioms.addAll(axioms[:num_axioms])
         test_axioms.addAll(axioms[num_axioms:])
 
