@@ -6,6 +6,13 @@ import numpy as np
 from org.semanticweb.owlapi.model.parameters import Imports
 from org.semanticweb.owlapi.model import AxiomType as Ax
 
+import logging
+logger = logging.getLogger(__name__)
+# handler = logging.StreamHandler()
+# logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
+
+
 class Evaluator:
     def __init__(self, dataset, device):
         self.dataset = dataset
@@ -32,6 +39,8 @@ class Evaluator:
 class RelationEvaluator(Evaluator):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.subproperties, self.superproperties, self.inverse_properties, self.transitive_properties = self.get_relation_properties()
 
     def get_relation_properties(self):
         rbox_axioms = self.dataset.ontology.getRBoxAxioms(Imports.fromBoolean(True))
@@ -101,7 +110,7 @@ class RelationEvaluator(Evaluator):
     
     def evaluate_single_relation(self, model, relation_id, num_entities, mode="test"):
         if mode == "valid":
-            eval_triples = self.valid_triples
+            eval_triples = self.test_triples #self.valid_triples
         else:
             eval_triples = self.test_triples
 
@@ -127,12 +136,39 @@ class RelationEvaluator(Evaluator):
             for batch, in dataloader:
                 batch = batch.to(self.device)
                 heads, rels, tails = batch[:, 0], batch[:, 1], batch[:, 2]
+                single_rel = rels[0]
+                
                 aux_heads = heads.clone()
-                heads = heads.repeat_interleave(num_entities).unsqueeze(1)
-                rels = rels.repeat_interleave(num_entities).unsqueeze(1)
-                eval_tails = th.arange(num_entities, device=rels.device).repeat(len(tails)).unsqueeze(1)
-                data = th.cat([heads, rels, eval_tails], dim=-1)
-                logits = model(th.cat([heads, rels, eval_tails], dim=-1), "gci2")
+                aux_tails = tails.clone()
+
+                if self.id_to_relation[relation_id] in self.transitive_properties:
+                    heads_ids = aux_heads.clone()
+                    rel = rels[0]
+                    proj_matrix = model.rel_projection(single_rel).view(model.embed_dim, model.embed_dim)
+                    heads = model.class_embed(heads)
+                    proj_heads = th.matmul(heads, proj_matrix)
+                    eval_tails_ids = th.arange(num_entities, device=rels.device)
+                    eval_tails = model.class_embed(eval_tails_ids)
+                    proj_tails = th.matmul(eval_tails, proj_matrix)
+
+                    proj_heads_rad = model.proj_rad.weight[single_rel, heads_ids].squeeze(0)
+                    proj_tails_rad = model.proj_rad.weight[single_rel, eval_tails_ids].squeeze(0)
+
+                    proj_heads = th.repeat_interleave(proj_heads, num_entities, dim=0)
+                    proj_tails = proj_tails.repeat(len(aux_heads), 1)
+
+                    proj_heads_rad = th.repeat_interleave(proj_heads_rad, num_entities, dim=0)
+                    proj_tails_rad = proj_tails_rad.repeat(len(aux_heads))
+
+                    dist = th.linalg.norm(proj_heads - proj_tails, dim=1, keepdim=False) + proj_heads_rad - proj_tails_rad
+                    logits = th.relu(dist- model.margin)
+
+                    
+                else:
+                    heads = heads.repeat_interleave(num_entities).unsqueeze(1)
+                    rels = rels.repeat_interleave(num_entities).unsqueeze(1)
+                    eval_tails = th.arange(num_entities, device=rels.device).repeat(len(tails)).unsqueeze(1)
+                    logits = model(th.cat([heads, rels, eval_tails], dim=-1), "gci2")
                 logits = logits.view(-1, num_entities)
 
                 for i, head in enumerate(aux_heads):
@@ -168,30 +204,93 @@ class RelationEvaluator(Evaluator):
                             franks[f_rank] = 0
                         franks[f_rank] += 1
 
+                
+                
+                if self.id_to_relation[relation_id] in self.transitive_properties:
+                    del proj_heads, proj_tails
+                    tails_ids = aux_tails.clone()
+                    tails = model.class_embed(tails_ids)
+                    proj_tails = th.matmul(tails, proj_matrix)
+                    eval_heads_ids = th.arange(num_entities, device=rels.device)
+                    eval_heads = model.class_embed(eval_heads_ids)
+                    proj_heads = th.matmul(eval_heads, proj_matrix)
+
+                    proj_heads_rad = model.proj_rad.weight[single_rel, eval_heads_ids].squeeze(0)
+                    proj_tails_rad = model.proj_rad.weight[single_rel, tails_ids].squeeze(0)
+
+                    proj_heads = proj_heads.repeat(len(aux_tails), 1)
+                    proj_tails = th.repeat_interleave(proj_tails, num_entities, dim=0)
+
+                    proj_heads_rad = proj_heads_rad.repeat(len(aux_tails))
+                    proj_tails_rad = th.repeat_interleave(proj_tails_rad, num_entities, dim=0)
+
+                    dist = th.linalg.norm(proj_heads - proj_tails, dim=1, keepdim=False) + proj_heads_rad - proj_tails_rad
+                    logits = th.relu(dist- model.margin)
+
+                    
+                else:
+                        
+                    tails = tails.repeat_interleave(num_entities).unsqueeze(1)
+                    eval_heads = th.arange(num_entities, device=rels.device).repeat(len(aux_tails)).unsqueeze(1)
+                    logits = model(th.cat([eval_heads, rels, tails], dim=-1), "gci2")
+                logits = logits.view(-1, num_entities)
+                
+                for i, tail in enumerate(aux_tails):
+                    head = aux_heads[i]
+                    preds = logits[i]
+                    order = th.argsort(preds, descending=False)
+                    rank = th.where(order == head)[0].item() + 1
+                    mr += rank
+                    mrr += 1 / rank
+
+                    if mode == "test":
+                        f_preds = preds * filtering_labels[:, tail].to(preds.device)
+                        f_order = th.argsort(f_preds, descending=False)
+                        f_rank = th.where(f_order == head)[0].item() + 1
+                        fmr += f_rank
+                        fmrr += 1 / f_rank
+                    
+
+                    if mode == "test":
+                        for k in hits_k:
+                            if rank <= int(k):
+                                hits_k[k] += 1
+
+                        for k in f_hits_k:
+                            if f_rank <= int(k):
+                                f_hits_k[k] += 1
+
+                        if rank not in ranks:
+                            ranks[rank] = 0
+                        ranks[rank] += 1
                                 
-            mr = mr / len(eval_triples)
-            mrr = mrr / len(eval_triples)
+                        if f_rank not in franks:
+                            franks[f_rank] = 0
+                        franks[f_rank] += 1
+                                
+            mr = mr / (2 * len(eval_triples))
+            mrr = mrr / (2 * len(eval_triples))
 
             metrics["mr"] = mr
             metrics["mrr"] = mrr
 
             if mode == "test":
-                fmr = fmr / len(eval_triples)
-                fmrr = fmrr / len(eval_triples)
+                fmr = fmr / (2 * len(eval_triples))
+                fmrr = fmrr / (2 * len(eval_triples))
                 auc = compute_rank_roc(ranks, num_entities)
                 f_auc = compute_rank_roc(franks, num_entities)
 
-                metrics["fmr"] = fmr
-                metrics["fmrr"] = fmrr
+                metrics["f_mr"] = fmr
+                metrics["f_mrr"] = fmrr
                 metrics["auc"] = auc
                 metrics["f_auc"] = f_auc
                 
                 for k in hits_k:
-                    hits_k[k] = hits_k[k] / len(eval_triples)
+                    hits_k[k] = hits_k[k] / (2 * len(eval_triples))
                     metrics[f"hits@{k}"] = hits_k[k]
                     
                 for k in f_hits_k:
-                    f_hits_k[k] = f_hits_k[k] / len(eval_triples)
+                    f_hits_k[k] = f_hits_k[k] / (2 * len(eval_triples))
                     metrics[f"f_hits@{k}"] = f_hits_k[k]
 
             metrics = {f"{mode}_{k}": v for k, v in metrics.items()}
@@ -233,23 +332,17 @@ class RelationEvaluator(Evaluator):
         return average_metrics
 
 
-    def evaluate_by_property(self, model):
+    def evaluate_by_property(self, model, mode="test"):
         model.eval()
-        subproperties, superproperties, inverse_properties, transitive_properties = self.get_relation_properties()
+        
         metrics = dict()
-        metrics["subproperties"] = self.evaluate(model, relations_to_evaluate=subproperties, mode="test")
-        metrics["superproperties"] = self.evaluate(model, relations_to_evaluate=superproperties, mode="test")
-        metrics["inverse_properties"] = self.evaluate(model, relations_to_evaluate=inverse_properties, mode="test")
-        metrics["transitive_properties"] = self.evaluate(model, relations_to_evaluate=transitive_properties, mode="test")
+        metrics["subproperties"] = self.evaluate(model, relations_to_evaluate=self.subproperties, mode=mode)
+        metrics["superproperties"] = self.evaluate(model, relations_to_evaluate=self.superproperties, mode=mode)
+        metrics["inverse_properties"] = self.evaluate(model, relations_to_evaluate=self.inverse_properties, mode=mode)
+        metrics["transitive_properties"] = self.evaluate(model, relations_to_evaluate=self.transitive_properties, mode=mode)
 
-        print("Subproperties")
-        print(metrics["subproperties"])
-        print("Superproperties")
-        print(metrics["superproperties"])
-        print("Inverse properties")
-        print(metrics["inverse_properties"])
-        print("Transitive properties")
-        print(metrics["transitive_properties"])
+        return metrics
+                                                                
         
         
 

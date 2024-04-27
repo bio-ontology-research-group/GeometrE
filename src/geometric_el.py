@@ -4,7 +4,7 @@ from mowl.base_models.elmodel import EmbeddingELModel
 from mowl.datasets import PathDataset
 from org.semanticweb.owlapi.model.parameters import Imports
 from org.semanticweb.owlapi.model import AxiomType as Ax
-from evaluators import RelationEvaluator
+from normal_evaluators import RelationEvaluator
 from tqdm import tqdm
 from mowl.nn import ELEmModule, ELBoxModule, BoxSquaredELModule
 import torch as th
@@ -18,6 +18,7 @@ import math
 import click as ck
 import os
 import wandb
+from utils import seed_everything
 logger = logging.getLogger(__name__)
 # handler = logging.StreamHandler()
 # logger.addHandler(handler)
@@ -30,23 +31,23 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--module_name", "-m", default="elem", help="Module to use")
 @ck.option("--evaluator_name", "-e", default="relation", help="Evaluator to use")
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
-@ck.option("--batch_size", "-bs", default=512, help="Batch size")
-@ck.option("--module_margin", "-mm", default=0.01, help="Margin for the module")
-@ck.option("--loss_margin", "-lm", default=0.01, help="Margin for the loss function")
-@ck.option("--learning_rate", "-lr", default=0.0001, help="Learning rate")
+@ck.option("--batch_size", "-bs", default=78000, help="Batch size")
+@ck.option("--module_margin", "-mm", default=0.1, help="Margin for the module")
+@ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
+@ck.option("--learning_rate", "-lr", default=0.001, help="Learning rate")
 @ck.option("--epochs", "-e", default=4000, help="Number of epochs")
-@ck.option("--rbox_loss", "-rbox", is_flag=True)
-@ck.option("--evaluate_every", "-every", default=10, help="Evaluate every n epochs")
+@ck.option("--evaluate_every", "-every", default=50, help="Evaluate every n epochs")
 @ck.option("--device", "-d", default="cuda", help="Device to use")
 @ck.option("--wandb_description", "-desc", default="default")
 @ck.option("--no_wandb", "-nw", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
-         module_margin, loss_margin, learning_rate, epochs, rbox_loss, evaluate_every,
+         module_margin, loss_margin, learning_rate, epochs, evaluate_every,
          device, wandb_description, no_wandb, only_test):
 
     # only_test = True
-    
+    seed_everything(42)
+
     if no_wandb:
         wandb_logger = DummyLogger()
     else:
@@ -72,8 +73,7 @@ def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
                       "batch_size": batch_size,
                       "module_margin": module_margin,
                       "loss_margin": loss_margin,
-                      "learning_rate": learning_rate,
-                      "rbox_loss": rbox_loss,
+                      "learning_rate": learning_rate
                       })
 
     
@@ -82,26 +82,74 @@ def main(dataset_name, module_name, evaluator_name, embed_dim, batch_size,
     model_dir = f"{root_dir}/models/"
     os.makedirs(model_dir, exist_ok=True)
 
-    model_filepath = f"{model_dir}/{module_name}_{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{rbox_loss}.pt"
+    model_filepath = f"{model_dir}/{module_name}_{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_normal.pt"
     model = GeometricELModel(module_name, evaluator_name, dataset, batch_size,
                              embed_dim, module_margin, loss_margin,
                              learning_rate, model_filepath,
-                             epochs, rbox_loss, evaluate_every, device, wandb_logger)
+                             epochs, evaluate_every, device, wandb_logger)
 
     
     if not only_test:
         model.train()
         
     metrics = model.test()
-    for metric, value in metrics.items():
-        print(f"{metric}: {value}")
+    metrics_by_property = model.test_by_property()
 
-    # model.test_by_property()
+    print_as_md(metrics, metrics_by_property)
 
-        
+             
     wandb_logger.log(metrics)
         
 
+def print_as_md(overall_metrics, metrics_by_property):
+    
+    metrics = ["test_mr", "test_mrr", "test_auc", "test_hits@1", "test_hits@3", "test_hits@10", "test_hits@50", "test_hits@100"]
+    filt_metrics = [k.replace("_", "_f_") for k in metrics]
+
+    string_metrics = "| Property | MR | MRR | AUC | Hits@1 | Hits@3 | Hits@10 | Hits@50 | Hits@100 | \n"
+    string_metrics += "| --- | --- | --- | --- | --- | --- | --- | --- | --- | \n"
+    string_filtered_metrics = "| Property | MR | MRR | AUC | Hits@1 | Hits@3 | Hits@10 | Hits@50 | Hits@100 | \n"
+    string_filtered_metrics += "| --- | --- | --- | --- | --- | --- | --- | --- | --- | \n"
+    
+    for property_ in metrics_by_property:
+        string_metrics += f"| {property_} | "
+        string_filtered_metrics += f"| {property_} | "
+
+        for metric in metrics:
+            if metric == "test_mr":
+                string_metrics += f"{int(metrics_by_property[property_][metric])} | "
+            else:
+                string_metrics += f"{metrics_by_property[property_][metric]:.4f} | "
+        string_metrics += "\n"
+                
+        for metric in filt_metrics:
+            if metric == "test_f_mr":
+                string_filtered_metrics += f"{int(metrics_by_property[property_][metric])} | "
+            else:
+                string_filtered_metrics += f"{metrics_by_property[property_][metric]:.4f} | "
+        string_filtered_metrics += "\n"
+
+    string_metrics += "| Overall | "
+    string_filtered_metrics += "| Overall | "
+    for metric in metrics:
+        if metric == "test_mr":
+            string_metrics += f"{int(overall_metrics[metric])} | "
+        else:
+            string_metrics += f"{overall_metrics[metric]:.4f} | "
+    for metric in filt_metrics:
+        if metric == "test_f_mr":
+            string_filtered_metrics += f"{int(overall_metrics[metric])} | "
+        else:
+            string_filtered_metrics += f"{overall_metrics[metric]:.4f} | "
+
+
+    print(string_metrics)
+    print("\n\n")
+    print(string_filtered_metrics)
+        
+    
+
+    
 def dataset_resolver(dataset_name):
     if dataset_name.lower() == "goslim":
         root_dir = "../data/goslim_generic_existential/"
@@ -134,9 +182,9 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
 
 
 class GeometricELModel(EmbeddingELModel):
-    def __init__(self, module_name, evaluator_name, dataset, batch_size,
-                 embed_dim, module_margin, loss_margin, learning_rate,
-                 model_filepath, epochs, rbox_loss,
+    def __init__(self, module_name, evaluator_name, dataset,
+                 batch_size, embed_dim, module_margin, loss_margin,
+                 learning_rate, model_filepath, epochs,
                  evaluate_every, device, wandb_logger):
         super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath)
 
@@ -158,9 +206,7 @@ class GeometricELModel(EmbeddingELModel):
         self.device = device
         self.wandb_logger = wandb_logger
 
-        self.rbox_loss = rbox_loss
-        if rbox_loss:
-            self.rbox_data = self.process_rbox_axioms()
+        self.rbox_data = self.process_rbox_axioms()
         
             
     def process_rbox_axioms(self):
@@ -200,55 +246,7 @@ class GeometricELModel(EmbeddingELModel):
     def tbox_forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
 
-    def rbox_forward(self, *args, **kwargs):
-        num_samples = 100
-        # samples = th.rand(num_samples, self.embed_dim, device=self.device).unsqueeze(0)
-
-        ####
-        subobjectproperty = self.rbox_data["subobjectproperty"].to(self.device)
-        subs = self.module.rel_embed(subobjectproperty[:, 0])
-        sups = self.module.rel_embed(subobjectproperty[:, 1])
-        
-        euc_dist = th.linalg.norm(subs - sups, dim=-1)
-        euc_loss = th.relu(euc_dist - th.abs(self.module.sub_slack)).mean()
-        sim = th.sum(subs * sups, dim=-1)
-        sim_loss = (1 - th.sigmoid(sim)).mean()
-        
-        loss = euc_loss + sim_loss
-
-        ###
-        inverseproperty = self.rbox_data["inverseproperty"].to(self.device)
-        firsts = self.module.rel_embed(inverseproperty[:, 0])
-        seconds = self.module.rel_embed(inverseproperty[:, 1])
-        euc_dist = th.linalg.norm(firsts + seconds, dim=-1)
-        euc_loss = th.relu(euc_dist - th.abs(self.module.inv_slack)).mean()
-        sim = th.sum(firsts * seconds, dim=-1)
-        sim_loss = (th.sigmoid(sim)).mean()
-        
-        loss += euc_loss + sim_loss
-
-        ###
-        transitiveproperty = self.rbox_data["transitiveproperty"].to(self.device)
-        prop = self.module.rel_embed(transitiveproperty)
-        prop = prop.unsqueeze(1)
-        target = prop
-        target2 = 2*prop
-        euc_dist = th.linalg.norm(target - target2, dim=-1)
-        euc_loss = th.relu(euc_dist - th.abs(self.module.trans_slack)).mean()
-        sim = th.sum(target * target2, dim=-1)
-        sim_loss = (1 - th.sigmoid(sim)).mean()
-
-        loss += euc_loss + sim_loss
-
-        reg_factor =1
-        reg = th.abs(th.linalg.norm(self.module.rel_embed.weight, axis=1) - reg_factor).mean()
-        loss += reg
-
-        
-        return loss
-        
-
-    
+ 
     def train(self):
 
         dls = {gci_name: DataLoader(ds, batch_size=self.batch_size, shuffle=True)
@@ -267,7 +265,7 @@ class GeometricELModel(EmbeddingELModel):
 
         optimizer = th.optim.Adam(self.module.parameters(), lr=self.learning_rate)
 
-        min_lr = self.learning_rate / 10
+        min_lr = self.learning_rate / 100
         max_lr = self.learning_rate
         train_steps = int(math.ceil(len(main_dl) / self.batch_size))
         step_size_up = 2 * train_steps
@@ -277,7 +275,8 @@ class GeometricELModel(EmbeddingELModel):
         scheduler = th.optim.lr_scheduler.CyclicLR(optimizer, base_lr=min_lr, max_lr=max_lr, step_size_up=1000, step_size_down=1000, cycle_momentum=False)
         
         best_mrr = 0
-
+        best_loss = float("inf")
+        
         num_classes = len(self.dataset.classes)
 
         self.module = self.module.to(self.device)
@@ -286,7 +285,6 @@ class GeometricELModel(EmbeddingELModel):
             
 
             total_train_loss = 0
-            total_rbox_loss = 0
             
             for batch_data in main_dl:
 
@@ -311,11 +309,11 @@ class GeometricELModel(EmbeddingELModel):
                     neg_logits = self.tbox_forward(neg_batch, gci_name)
                     loss += - F.logsigmoid(-pos_logits + neg_logits - self.loss_margin).mean() * dls_weights[gci_name]
 
+                loss += self.module.regularization_loss()
+                reg_factor =1
+                reg = th.abs(th.linalg.norm(self.module.rel_embed.weight, axis=1) - reg_factor).mean()
+                loss += reg
 
-                if self.rbox_loss:
-                    rbox_loss = self.rbox_forward()
-                    loss += rbox_loss
-                
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -323,16 +321,14 @@ class GeometricELModel(EmbeddingELModel):
                 scheduler.step()
 
                 total_train_loss += loss.item()
-                if self.rbox_loss:
-                    total_rbox_loss += rbox_loss.item()
-                    
+                                    
             if epoch % self.evaluate_every == 0:
-                valid_metrics = self.evaluator.evaluate(self.module, mode="valid")
+                # valid_metrics = self.evaluator.evaluate(self.module, mode="valid")
+                valid_metrics = self.evaluator.evaluate_by_property(self.module, mode="valid")
+                valid_metrics = valid_metrics["transitive_properties"]
                 valid_mrr = valid_metrics["valid_mrr"]
                 valid_mr = valid_metrics["valid_mr"]
                 valid_metrics["train_loss"] = total_train_loss
-                if self.rbox_loss:
-                    valid_metrics["rbox_loss"] = rbox_loss
                 self.wandb_logger.log(valid_metrics)
 
                 if valid_mrr > best_mrr:
@@ -346,7 +342,7 @@ class GeometricELModel(EmbeddingELModel):
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
 
-                logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - RBox Loss: {total_rbox_loss} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
 
     def test(self):
         self.module.load_state_dict(th.load(self.model_filepath))
@@ -360,7 +356,7 @@ class GeometricELModel(EmbeddingELModel):
         self.module.load_state_dict(th.load(self.model_filepath))
         self.module.to(self.device)
         self.module.eval()
-        return self.evaluator.evaluate_by_property(self.module)
+        return self.evaluator.evaluate_by_property(self.module, mode="test")
 
 
 class DummyLogger():
