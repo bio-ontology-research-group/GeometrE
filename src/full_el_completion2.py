@@ -10,7 +10,7 @@ import os
 from itertools import cycle
 import pandas as pd
 
-from .nn2 import FullELEmModule
+from .nn2 import FullELEmModule, FullELBEModule
 from mowl.utils.data import FastTensorDataLoader
 from mowl.datasets import PathDataset, Dataset
 from mowl.owlapi import OWLAPIAdapter
@@ -44,8 +44,8 @@ class ELModule(nn.Module):
     def set_module(self, module_name):
         if module_name == "elem":
             self.el_module = FullELEmModule(self.nb_classes, self.nb_roles, embed_dim = self.dim, transitive_ids = self.transitive_ids)
-        # elif module_name == "elbe":
-            # self.el_module = ELBoxModule(self.nb_classes, self.nb_roles, embed_dim = self.dim)
+        elif module_name == "elbe":
+            self.el_module = FullELBEModule(self.nb_classes, self.nb_roles, embed_dim = self.dim, transitive_ids = self.transitive_ids)
         # elif module_name == "boxel":
             # self.el_module = BoxELModule(self.nb_classes, self.nb_roles, embed_dim = self.dim)
         # elif module_name == "box2el":
@@ -58,6 +58,9 @@ class ELModule(nn.Module):
 
     def trans_gci2_loss(self, *args, **kwargs):
         return self.el_module.trans_gci2_loss(*args, **kwargs)
+
+    def trans_gci3_loss(self, *args, **kwargs):
+        return self.el_module.trans_gci3_loss(*args, **kwargs)
 
 class FullELModel(EmbeddingELModel):
     def __init__(self, use_case, model_name, root, num_models,
@@ -279,8 +282,14 @@ class FullELModel(EmbeddingELModel):
         print("Main DataLoader: {}".format(main_dl_name))
             
         total_el_dls_size = sum(el_dls_sizes.values())
+        mean_el_dls_size = total_el_dls_size / len(el_dls_sizes)
+        print(f"Total EL DLS size: {total_el_dls_size}")
+        print(f"Mean EL DLS size: {mean_el_dls_size}")
         el_dls_weights = {gci_name: ds_size / total_el_dls_size for gci_name, ds_size in el_dls_sizes.items()}
-
+        # el_dls_weights = {k: 1.0 for k in el_dls_weights.keys()}
+        # el_dls_weights = {gci_name: mean_el_dls_size / ds_size for gci_name, ds_size in el_dls_sizes.items()}
+        print(f"EL DLS weights: {el_dls_weights}")
+        
         el_dls = {gci_name: cycle(dl) for gci_name, dl in el_dls.items() if gci_name != "gci0"}
         
         py_logger.info(f"Dataloaders: {el_dls_sizes}")
@@ -306,20 +315,28 @@ class FullELModel(EmbeddingELModel):
                 module = module.to(self.device)
                 module.train()
                 
-
+                train_gci_losses = {gci_name: 0 for gci_name in el_dls.keys()}
+                train_gci_losses["gci0"] = 0
+                train_gci_losses["trans_reg"] = 0
+                train_gci_losses["normal_reg"] = 0
                 train_el_loss = 0
+                train_trans_loss = 0
+                train_non_trans_loss = 0
                 
                 for batch_data in main_dl:
                                                                                         
                     gci0_batch = batch_data.to(self.device)
                     
-                    pos_gci0 = module.tbox_forward(gci0_batch, "gci0").mean() * el_dls_weights["gci0"]
+                    pos_gci0 = module.tbox_forward(gci0_batch, "gci0")
                     #el_loss = pos_gci0
                     neg_idxs = np.random.choice(nb_classes, size=len(gci0_batch), replace=True)
                     neg_batch = th.tensor(neg_idxs, dtype=th.long, device=self.device)
                     neg_data = th.cat((gci0_batch[:, :1], neg_batch.unsqueeze(1)), dim=1)
-                    neg_gci0 = module.tbox_forward(neg_data, "gci0").mean() * el_dls_weights["gci0"]
-                    el_loss = -F.logsigmoid(-pos_gci0 + neg_gci0 - self.margin).mean()
+                    neg_gci0 = module.tbox_forward(neg_data, "gci0")
+
+                    el_loss = -F.logsigmoid(-pos_gci0 + neg_gci0 - self.margin).mean() * el_dls_weights["gci0"]
+
+                    train_gci_losses["gci0"] += el_loss.item()
                     
                     for gci_name, gci_dl in el_dls.items():
                         if gci_name == "gci0":
@@ -327,47 +344,63 @@ class FullELModel(EmbeddingELModel):
 
                         gci_batch = next(gci_dl).to(self.device)
 
+                        pos_trans_reg_loss = th.zeros(1, device=gci_batch.device).mean()
+
                         if "gci2" in gci_name:
                             pos_gci_trans, pos_gci_non_trans, pos_trans_reg_loss = module.trans_gci2_loss(gci_batch)
-                            pos_gci_trans = pos_gci_trans.mean() * el_dls_weights[gci_name]
-                            pos_gci_non_trans = pos_gci_non_trans.mean() * el_dls_weights[gci_name]
+                            pos_gci_trans = pos_gci_trans
+                            pos_gci_non_trans = pos_gci_non_trans
                         elif "gci3" in gci_name:
                             pos_gci_trans, pos_gci_non_trans, pos_trans_reg_loss = module.trans_gci3_loss(gci_batch)
-                            pos_gci_trans = pos_gci_trans.mean() * el_dls_weights[gci_name]
-                            pos_gci_non_trans = pos_gci_non_trans.mean() * el_dls_weights[gci_name]
+                            pos_gci_trans = pos_gci_trans
+                            pos_gci_non_trans = pos_gci_non_trans
 
                         else:
                             pos_gci = module.tbox_forward(gci_batch, gci_name).mean() * el_dls_weights[gci_name]
 
                         neg_idxs = np.random.choice(nb_classes, size=len(gci_batch), replace=True)
                         neg_batch = th.tensor(neg_idxs, dtype=th.long, device=self.device)
-                        neg_data = th.cat((gci_batch[:, :2], neg_batch.unsqueeze(1)), dim=1)
 
-                        if "gci2" in gci_name::
+                        if gci_name != "gci1_bot":
+                            neg_data = th.cat((gci_batch[:, :2], neg_batch.unsqueeze(1)), dim=1)
+                            
+                        if "gci2" in gci_name:
                             neg_gci_trans, neg_gci_non_trans, neg_trans_reg_loss = module.trans_gci2_loss(neg_data)
-                            neg_gci_trans = neg_gci_trans.mean() * el_dls_weights[gci_name]
-                            neg_gci_non_trans = neg_gci_non_trans.mean() * el_dls_weights[gci_name]
+                            neg_gci_trans = neg_gci_trans
+                            neg_gci_non_trans = neg_gci_non_trans
                         elif "gci3" in gci_name:
                             neg_gci_trans, neg_gci_non_trans, neg_trans_reg_loss = module.trans_gci3_loss(neg_data)
-                            neg_gci_trans = neg_gci_trans.mean() * el_dls_weights[gci_name]
-                            neg_gci_non_trans = neg_gci_non_trans.mean() * el_dls_weights[gci_name]
-                        else:
-                            neg_gci = module.tbox_forward(neg_data, gci_name).mean() * el_dls_weights[gci_name]
+                            neg_gci_trans = neg_gci_trans
+                            neg_gci_non_trans = neg_gci_non_trans
+                        elif gci_name != "gci1_bot":
+                            neg_gci = module.tbox_forward(neg_data, gci_name)
 
-                        if "gci2" in gci_name or "gci3" in gci_name::
-                            el_loss += -F.logsigmoid(-pos_gci_trans + neg_gci_trans - self.margin).mean()
-                            el_loss += -F.logsigmoid(-pos_gci_non_trans + neg_gci_non_trans - self.margin).mean()
-                            el_loss += pos_trans_reg_loss + neg_trans_reg_loss
-                        else:
-                            el_loss += -F.logsigmoid(-pos_gci + neg_gci - self.margin).mean()
+                        if "gci2" in gci_name or "gci3" in gci_name:
+                            trans_loss = -F.logsigmoid(-pos_gci_trans + neg_gci_trans - self.margin).mean() * el_dls_weights[gci_name]
+                            non_trans_loss = th.zeros(1, device=trans_loss.device).mean() #-F.logsigmoid(-pos_gci_non_trans + neg_gci_non_trans - self.margin).mean()
+                            gci_loss = (trans_loss + non_trans_loss)
+                            el_loss += gci_loss
+                            # el_loss += pos_trans_reg_loss
+                        elif gci_name != "gci1_bot":
+                            gci_loss = -F.logsigmoid(-pos_gci + neg_gci - self.margin).mean() * el_dls_weights[gci_name]
+                            el_loss += gci_loss
+                        elif gci_name == "gci1_bot":
+                            gci_loss = pos_gci
+                            el_loss += gci_loss
+
+                            
+                        train_gci_losses[gci_name] += gci_loss.item()
+                        
 
                     loss = el_loss
 
-                    if self.module_name in ["elem"]:
-                        loss += module.el_module.regularization_loss()                                                                             
+                    # if self.module_name in ["elem"]:
+                        # loss += module.el_module.regularization_loss()                                                                             
                     loss.backward()
                     optimizer.step()
                     train_el_loss += el_loss.item()
+                    train_trans_loss += trans_loss.item()
+                    train_non_trans_loss += non_trans_loss.item()
                     
                 train_el_loss /= len(main_dl)
                 
@@ -380,7 +413,13 @@ class FullELModel(EmbeddingELModel):
                         current_tolerance = tolerance
                         th.save(module.state_dict(), sub_module_filepath)
                         print("Model saved")
-                    print(f"Epoch {epoch}: Training: EL loss: {train_el_loss:.6f} | Valid MR: {valid_mr:.6f} | Valid MRR: {valid_mrr:.6f}")
+
+                    to_print = f"Epoch {epoch}: TRAINING: "
+                    for gci_name, gci_loss in train_gci_losses.items():
+                        to_print += f"{gci_name}: {gci_loss:.4f} | "
+                    to_print += f" VALIDATION: MR: {valid_mr:.4f} | MRR: {valid_mrr:.4f}"
+                    print(to_print)
+                    # print(f"Epoch {epoch}: TRAINING: EL loss: {train_el_loss:.6f} | Trans Loss: {train_trans_loss:.6f} | Non-trans loss: {train_non_trans_loss:.6f} | VALIDATION: MR: {valid_mr:.6f} | MRR: {valid_mrr:.6f}")
 
                     logger.log({"train_el_loss": train_el_loss, "valid_mr": valid_mr, "valid_mrr": valid_mrr})
 

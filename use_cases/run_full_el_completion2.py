@@ -50,7 +50,7 @@ def main(use_case, model_type, num_models, emb_dim, batch_size,
         lr = wandb.config.lr
         margin = wandb.config.margin
 
-    root = f"{use_case}/data"
+    root = f"/data/zhapacfp/ontor/{use_case}/data"
             
     #get parent of root
     root_parent = os.path.dirname(root)
