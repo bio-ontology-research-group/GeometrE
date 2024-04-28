@@ -378,6 +378,7 @@ class FullELModel(EmbeddingELModel):
                         if "gci2" in gci_name or "gci3" in gci_name:
                             trans_loss = -F.logsigmoid(-pos_gci_trans + neg_gci_trans - self.margin).mean() * el_dls_weights[gci_name]
                             non_trans_loss = th.zeros(1, device=trans_loss.device).mean() #-F.logsigmoid(-pos_gci_non_trans + neg_gci_non_trans - self.margin).mean()
+                            non_trans_loss = -F.logsigmoid(-pos_gci_non_trans + neg_gci_non_trans - self.margin).mean() * el_dls_weights[gci_name]
                             gci_loss = (trans_loss + non_trans_loss)
                             el_loss += gci_loss
                             # el_loss += pos_trans_reg_loss

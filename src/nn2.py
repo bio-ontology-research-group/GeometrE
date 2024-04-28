@@ -204,14 +204,14 @@ class FullELBEModule(ELBoxModule):
 
     
     def trans_gci2_loss(self, data, neg=False, idxs_for_negs=None):
-        return transitive_gci2_loss_elbe(data, self.transitive_ids, self.class_embed, self.rel_embed, self.rel_projection, self.proj_rad, self.existential, self.margin, neg=neg)
+        return transitive_gci2_loss_elbe(data, self.transitive_ids, self.class_embed, self.class_offset, self.rel_embed, self.rel_projection, self.proj_rad, self.existential, self.margin, neg=neg)
 
 
     def trans_gci3_loss(self, data, neg=False, idxs_for_negs=None):
-        return transitive_gci3_loss_elbe(data, self.transitive_ids, self.class_embed, self.rel_embed, self.rel_projection_2, self.proj_rad_2, self.existential, self.margin, neg=neg)
+        return transitive_gci3_loss_elbe(data, self.transitive_ids, self.class_embed, self.class_offset, self.rel_embed, self.rel_projection_2, self.proj_rad_2, self.existential, self.margin, neg=neg)
 
 
-def transitive_gci2_loss_elbe(data, transitive_ids, class_embed, rel_embed, rel_proj, proj_rad, existential, margin, neg=False):
+def transitive_gci2_loss_elbe(data, transitive_ids, class_embed, class_offset, rel_embed, rel_proj, proj_rad, existential, margin, neg=False):
 
     transitive_ids = transitive_ids.to(data.device)
     
@@ -241,21 +241,21 @@ def transitive_gci2_loss_elbe(data, transitive_ids, class_embed, rel_embed, rel_
     dist = th.linalg.norm(c_proj - d_proj, dim=1, keepdim=True) + c_proj_rad - d_proj_rad
     transitive_logits = th.relu(dist- margin)
 
-    non_transitive_logits = 0 #gci2_score(non_transitive_data, class_embed, class_rad, rel_embed, margin)
+    non_transitive_logits = gci2_score_elbe(non_transitive_data, class_embed, class_offset, rel_embed, margin)
 
     trans_reg_loss = th.abs(th.linalg.norm(c_proj, axis=1) - 1).mean()
     trans_reg_loss += th.abs(th.linalg.norm(d_proj, axis=1) - 1).mean()
     
     return transitive_logits, non_transitive_logits, trans_reg_loss
 
-def transitive_gci3_loss_elbe(data, transitive_ids, class_embed, rel_embed, rel_proj, proj_rad, existential, margin, neg=False):
+def transitive_gci3_loss_elbe(data, transitive_ids, class_embed, class_offset, rel_embed, rel_proj, proj_rad, existential, margin, neg=False):
 
     transitive_ids = transitive_ids.to(data.device)
     
     rel_ids = data[:, 0]
     # filter rels that are in transitive ids
     mask = th.isin(rel_ids, transitive_ids)
-    mask = th.isin(rel_ids, rel_ids)
+    # mask = th.isin(rel_ids, rel_ids)
 
     transitive_data = data[mask]
     non_transitive_data = data[~mask]
@@ -279,7 +279,7 @@ def transitive_gci3_loss_elbe(data, transitive_ids, class_embed, rel_embed, rel_
     dist = th.linalg.norm(c_proj - d_proj, dim=1, keepdim=True) + c_proj_rad - d_proj_rad
     transitive_logits = th.relu(dist- margin)
 
-    non_transitive_logits = 0 #gci3_score(non_transitive_data, class_embed, class_rad, rel_embed, margin)
+    non_transitive_logits = gci3_score_elbe(non_transitive_data, class_embed, class_offset, rel_embed, margin)
 
     trans_reg_loss = th.abs(th.linalg.norm(c_proj, axis=1) - 1).mean()
     trans_reg_loss += th.abs(th.linalg.norm(d_proj, axis=1) - 1).mean()
@@ -287,3 +287,27 @@ def transitive_gci3_loss_elbe(data, transitive_ids, class_embed, rel_embed, rel_
     return transitive_logits, non_transitive_logits, trans_reg_loss
 
 
+def gci2_score_elbe(data, class_embed, class_offset, rel_embed, margin, neg=False):
+    c = class_embed(data[:, 0])
+    r = rel_embed(data[:, 1])
+    d = class_embed(data[:, 2])
+
+    off_c = th.abs(class_offset(data[:, 0]))
+    off_d = th.abs(class_offset(data[:, 2]))
+    
+    euc = th.abs(c + r - d)
+    dst = th.reshape(th.linalg.norm(th.relu(euc + off_c - off_d + margin), axis=1), [-1, 1])
+    return dst
+
+
+def gci3_score_elbe(data, class_embed, class_offset, rel_embed, margin, neg=False):
+    r = rel_embed(data[:, 0])
+    c = class_embed(data[:, 1])
+    d = class_embed(data[:, 2])
+
+    off_c = th.abs(class_offset(data[:, 1]))
+    off_d = th.abs(class_offset(data[:, 2]))
+
+    euc = th.abs(c - r - d)
+    dst = th.reshape(th.linalg.norm(th.relu(euc - off_c - off_d + margin), axis=1), [-1, 1])
+    return dst
