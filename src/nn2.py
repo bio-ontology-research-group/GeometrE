@@ -102,7 +102,7 @@ def transitive_gci3_loss(data, transitive_ids, class_embed, class_rad, rel_embed
     rel_ids = data[:, 0]
     # filter rels that are in transitive ids
     mask = th.isin(rel_ids, transitive_ids)
-    mask = th.isin(rel_ids, rel_ids)
+    # mask = th.isin(rel_ids, rel_ids)
 
     transitive_data = data[mask]
     non_transitive_data = data[~mask]
