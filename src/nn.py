@@ -46,8 +46,8 @@ def transitive_gci2_loss(data, transitive_ids, class_embed, class_rad, rel_embed
     c_proj = th.bmm(c.unsqueeze(1), r).squeeze(1)
     d_proj = th.bmm(d.unsqueeze(1), r).squeeze(1)
 
-    c_proj_rad = proj_rad.weight[r_idxs, c_idxs]
-    d_proj_rad = proj_rad.weight[r_idxs, d_idxs]
+    c_proj_rad = th.abs(proj_rad.weight[r_idxs, c_idxs])
+    d_proj_rad = th.abs(proj_rad.weight[r_idxs, d_idxs])
 
     dist = th.linalg.norm(c_proj - d_proj, dim=1, keepdim=True) + c_proj_rad - d_proj_rad
     transitive_logits = th.relu(dist- margin)
