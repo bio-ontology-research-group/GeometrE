@@ -27,7 +27,7 @@ class Box():
 
     @check_output_shape
     @staticmethod
-    def inclusion(box1, box2, margin):
+    def inclusion(box1, box2, margin, *args):
         """
         Positive margin allows the box1 to be partially outside box2
         """
@@ -36,14 +36,14 @@ class Box():
 
     @check_output_shape
     @staticmethod
-    def non_inclusion(box1, box2, margin):
+    def non_inclusion(box1, box2, margin, *args):
         euc_distance = th.abs(box1.center - box2.center)
         return th.linalg.norm(th.relu(euc_distance + box1.offset - box2.offset - margin), axis=1)
         # return th.linalg.norm(th.relu(-euc_distance + box1.offset + box2.offset - margin), axis=1)
 
     @check_output_shape
     @staticmethod
-    def transitive_inclusion(box1, box2, relation, margin):
+    def transitive_inclusion(box1, box2, margin, relation):
         # return Box.inclusion(box1, box2, margin)
         # margin = max(margin, 0.2)
         logger.debug(f"Box1 center: {box1.center.shape}. Box2 center: {box2.center.shape}. Relation: {relation.shape}")
@@ -59,8 +59,8 @@ class Box():
 
     @check_output_shape
     @staticmethod
-    def non_transitive_inclusion(box1, box2, relation, margin):
-        return Box.non_inclusion(box1, box2, margin)
+    def non_transitive_inclusion(box1, box2, margin, relation):
+        return Box.non_inclusion(box1, box2, margin, relation)
 
     
     
@@ -173,7 +173,7 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, transitive_i
         else:
             transitive_fn = Box.inclusion
 
-    transitive_loss = transitive_fn(box_c_trans, box_d_trans, r_trans, margin)
+    transitive_loss = transitive_fn(box_c_trans, box_d_trans, margin, r_trans)
             
     c_non_trans = class_embed(non_trans_data[:, 0])
     r_non_trans = rel_embed(non_trans_data[:, 1])
