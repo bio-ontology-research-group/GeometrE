@@ -38,18 +38,26 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--evaluate_every", "-every", default=50, help="Evaluate every n epochs")
 @ck.option("--evaluate_deductive", "-evalded", is_flag=True, help="Use deductive closure as positive examples for evaluation")
 @ck.option("--filter_deductive", "-filterded", is_flag=True, help="Filter out examples from deductive closure")
+@ck.option("--transitive", "-trans", type=ck.Choice(["yes", "no"]))
 @ck.option("--device", "-d", default="cuda", help="Device to use")
 @ck.option("--wandb_description", "-desc", default="default")
 @ck.option("--no_sweep", "-ns", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, evaluator_name, embed_dim, batch_size,
          module_margin, loss_margin, learning_rate, epochs,
-         evaluate_every, evaluate_deductive, filter_deductive, device,
-         wandb_description, no_sweep, only_test):
+         evaluate_every, evaluate_deductive, filter_deductive,
+         transitive, device, wandb_description, no_sweep, only_test):
 
     seed_everything(42)
+
+    if transitive == "yes":
+        transitive = True
+    elif transitive == "no":
+        transitive = False
+    else:
+        raise ValueError(f"Transitive must be either 'yes' or 'no'")
     
-    wandb_logger = wandb.init(entity="ferzcam", project="onto-r", group="f{dataset_name}_{evaluate_deductive}_{filter_deductive}", name=wandb_description)
+    wandb_logger = wandb.init(entity="ferzcam", project="transEL", group="f{dataset_name}_{transitive}", name=wandb_description)
 
 
     if loss_margin == int(loss_margin):
@@ -60,19 +68,16 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
     if no_sweep:
         wandb_logger.log({"dataset_name": dataset_name,
                           "embed_dim": embed_dim,
-                          "batch_size": batch_size,
                           "module_margin": module_margin,
-                          "loss_margin": loss_margin,
-                          "learning_rate": learning_rate
+                          "learning_rate": learning_rate,
+                          "transitive": transitive
                           })
     else:
         dataset_name = wandb.config.dataset_name
         embed_dim = wandb.config.embed_dim
-        batch_size = wandb.config.batch_size
         module_margin = wandb.config.module_margin
-        loss_margin = wandb.config.loss_margin
         learning_rate = wandb.config.learning_rate
- 
+        transitive = wandb.config.transitive
     
     root_dir, dataset = dataset_resolver(dataset_name)
 
@@ -84,7 +89,7 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
                              embed_dim, module_margin, loss_margin,
                              learning_rate, model_filepath, epochs,
                              evaluate_every, evaluate_deductive,
-                             filter_deductive, device, wandb_logger)
+                             filter_deductive, transitive, device, wandb_logger)
 
     
     if not only_test:
@@ -149,8 +154,8 @@ class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
                  module_margin, loss_margin, learning_rate,
                  model_filepath, epochs, evaluate_every,
-                 evaluate_deductive, filter_deductive, device,
-                 wandb_logger):
+                 evaluate_deductive, filter_deductive, transitive,
+                 device, wandb_logger):
         super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath)
 
         self.rbox_data = self.process_rbox_axioms()
@@ -160,6 +165,7 @@ class GeometricELModel(EmbeddingELModel):
                                          len(self.dataset.individuals),
                                          embed_dim= self.embed_dim,
                                          margin=module_margin,
+                                         transitive=transitive,
                                          transitive_ids=transitive_ids)
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset, device, evaluate_with_deductive_closure=evaluate_deductive, filter_deductive_closure=filter_deductive)

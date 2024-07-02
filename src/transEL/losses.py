@@ -144,7 +144,7 @@ def gci1_bot_loss(data, class_embed, class_offset, margin, neg=False):
     return dst
 
 @check_output_shape
-def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, transitive_ids, margin, neg=False):
+def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, transitive_ids, margin, transitive, neg=False):
     r = data[:, 1]
     mask = th.isin(r, transitive_ids)
 
@@ -162,11 +162,19 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, transitive_i
     box_c_trans = Box(c_trans + r_trans, off_c_trans)
     box_d_trans = Box(d_trans, off_d_trans)
 
-    if neg:
-        transitive_loss = Box.non_transitive_inclusion(box_c_trans, box_d_trans, r_trans, margin)    
+    if transitive:
+        if neg:
+            transitive_fn = Box.non_transitive_inclusion
+        else:
+            transitive_fn = Box.transitive_inclusion
     else:
-        transitive_loss = Box.transitive_inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        if neg:
+            transitive_fn = Box.non_inclusion
+        else:
+            transitive_fn = Box.inclusion
 
+    transitive_loss = transitive_fn(box_c_trans, box_d_trans, r_trans, margin)
+            
     c_non_trans = class_embed(non_trans_data[:, 0])
     r_non_trans = rel_embed(non_trans_data[:, 1])
     d_non_trans = class_embed(non_trans_data[:, 2])
@@ -177,9 +185,11 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, transitive_i
     box_d_non_trans = Box(d_non_trans, off_d_non_trans)
 
     if neg:
-        non_trans_loss = Box.non_inclusion(box_c_non_trans, box_d_non_trans, margin)
+        non_trans_fn = Box.non_inclusion
     else:
-        non_trans_loss = Box.inclusion(box_c_non_trans, box_d_non_trans, margin)
+        non_trans_fn = Box.inclusion
+        
+    non_trans_loss = non_trans_fn(box_c_non_trans, box_d_non_trans, margin)
 
     final_output = th.zeros(data.shape[0], device=data.device)
     final_output[mask] = transitive_loss
