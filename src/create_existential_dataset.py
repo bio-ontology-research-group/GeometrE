@@ -37,7 +37,7 @@ def main(input_ontology, percentage, random_seed):
     random.seed(random_seed)
     manager = OWLAPIAdapter().owl_manager
 
-    new_directory = os.path.join(os.path.dirname(input_ontology), input_ontology[:-4] + "_existential")
+    new_directory = os.path.dirname(input_ontology)
     train_file_name = os.path.join(new_directory, "train.owl")
     valid_file_name = os.path.join(new_directory, "valid.owl")
     test_file_name = os.path.join(new_directory, "test.owl")
