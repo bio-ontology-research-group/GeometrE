@@ -79,6 +79,14 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         module_margin = wandb.config.module_margin
         learning_rate = wandb.config.learning_rate
         transitive = wandb.config.transitive
+
+        if transitive == "yes":
+            transitive = True
+        elif transitive == "no":
+            transitive = False
+        else:
+            raise ValueError(f"Transitive must be either 'yes' or 'no'")
+
     
     root_dir, dataset = dataset_resolver(dataset_name)
 

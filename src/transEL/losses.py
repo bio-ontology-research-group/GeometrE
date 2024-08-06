@@ -239,7 +239,7 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
 
     return final_output
 
-@check_output_shape
+
 def normal_gci3_loss(data, class_embed, class_offset, rel_embed, margin, neg=False):
     r = rel_embed(data[:, 0])
     c = class_embed(data[:, 1])
@@ -256,7 +256,7 @@ def normal_gci3_loss(data, class_embed, class_offset, rel_embed, margin, neg=Fal
     else:
         loss = Box.inclusion(box_c, box_d, margin)
 
-    return loss
+    return loss, None, None
 
 
  

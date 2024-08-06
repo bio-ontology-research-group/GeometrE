@@ -42,20 +42,21 @@ class TransitiveELModule(ELModule):
 
 
     def fix_classes(self, ids, dims):
-        centers = self.class_center(ids)
-        offsets = th.abs(self.class_offset(ids))
+        if ids is not None:
+            centers = self.class_center(ids)
+            offsets = th.abs(self.class_offset(ids))
 
-        lower = centers - offsets
-        upper = centers + offsets
+            lower = centers - offsets
+            upper = centers + offsets
 
-        lower[:, dims] = -self.min_bound
+            lower[:, dims] = -self.min_bound
 
         
-        new_centers = (upper + lower) / 2
-        new_offsets = (upper - lower) / 2
+            new_centers = (upper + lower) / 2
+            new_offsets = (upper - lower) / 2
         
-        self.class_center.weight.data[ids] = new_centers
-        self.class_offset.weight.data[ids] = new_offsets
+            self.class_center.weight.data[ids] = new_centers
+            self.class_offset.weight.data[ids] = new_offsets
 
 
         all_centers = self.class_center.weight.data
