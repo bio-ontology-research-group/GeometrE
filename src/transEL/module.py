@@ -18,10 +18,19 @@ class TransitiveELModule(ELModule):
         self.embed_dim = embed_dim
         self.transitive = transitive
 
-        self.class_center = self.init_embeddings(nb_ont_classes, embed_dim)
+        # self.class_center = nn.Embedding(nb_ont_classes, embed_dim)
+        # nn.init.uniform_(self.class_center.weight, a=-1, b=1)
+        self.class_center = self.init_embeddings(nb_ont_classes, embed_dim, a = -min_bound, b=1)
+
+        # self.class_offset = nn.Embedding(nb_ont_classes, embed_dim)
+        # nn.init.uniform_(self.class_offset.weight, a=-1, b=1)
         self.class_offset = self.init_embeddings(nb_ont_classes, embed_dim)
         self.individual_embed = self.init_embeddings(nb_individuals, embed_dim)
-        self.rel_embed = self.init_embeddings(nb_rels, embed_dim)
+
+        self.rel_embed = nn.Embedding(nb_rels, embed_dim)
+        nn.init.uniform_(self.rel_embed.weight, a=-1, b=1)
+
+        # self.rel_embed = self.init_embeddings(nb_rels, embed_dim)
                                         
         self.rel_mask = nn.Embedding(nb_rels, embed_dim)
         self.rel_mask.weight.data.fill_(0)
@@ -33,15 +42,17 @@ class TransitiveELModule(ELModule):
         self.margin = margin
 
 
-    def init_embeddings(self, n_embeddings, embed_dim):
+    def init_embeddings(self, n_embeddings, embed_dim, a = -1, b = 1):
         embeddings = nn.Embedding(n_embeddings, embed_dim)
-        nn.init.uniform_(embeddings.weight, a=-1, b=1)
+        nn.init.uniform_(embeddings.weight, a=a, b=b)
+        # nn.init.xavier_uniform_(embeddings.weight)
         weight_data_normalized = th.linalg.norm(embeddings.weight.data, axis=1).reshape(-1, 1)
         embeddings.weight.data /= weight_data_normalized
         return embeddings
 
 
     def fix_classes(self, ids, dims):
+        
         if ids is not None:
             centers = self.class_center(ids)
             offsets = th.abs(self.class_offset(ids))
@@ -49,7 +60,7 @@ class TransitiveELModule(ELModule):
             lower = centers - offsets
             upper = centers + offsets
 
-            lower[:, dims] = -self.min_bound
+            lower[dims] = -self.min_bound
 
         
             new_centers = (upper + lower) / 2

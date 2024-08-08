@@ -470,10 +470,10 @@ class RelationEvaluator(Evaluator):
             raise ValueError(f"Mode must be either 'valid' or 'test', not {mode}")
 
         
-        if relations_to_evaluate is None:
-            relations_to_evaluate = range(len(self.dataset.object_properties))
-        elif isinstance(relations_to_evaluate[0], str):
-            relations_to_evaluate = [self.relation_to_id[r] for r in relations_to_evaluate]
+        # if relations_to_evaluate is None:
+            # relations_to_evaluate = range(len(self.dataset.object_properties))
+        # elif isinstance(relations_to_evaluate[0], str):
+            # relations_to_evaluate = [self.relation_to_id[r] for r in relations_to_evaluate]
 
         results = dict()
 
@@ -678,9 +678,9 @@ class RelationEvaluator(Evaluator):
             return metrics
 
 
-    def evaluate_by_property(self, model):
+    def evaluate_by_property(self, model, transitive_properties):
         model.eval()
-        subproperties, superproperties, inverse_properties, transitive_properties = self.get_relation_properties()
+        # subproperties, superproperties, inverse_properties, transitive_properties = self.get_relation_properties()
         metrics = dict()
         # metrics["subproperties"] = self.evaluate(model, relations_to_evaluate=subproperties, mode="test")
         # metrics["superproperties"] = self.evaluate(model, relations_to_evaluate=superproperties, mode="test")

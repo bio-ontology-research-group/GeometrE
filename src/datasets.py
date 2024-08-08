@@ -5,7 +5,7 @@ from mowl.datasets.base import OWLClasses
 
 class SubsumptionDataset(PathDataset):
     def __init__(self, root_dir):
-        super().__init__(root_dir + "train.owl", root_dir + "valid.owl", root_dir + "test.owl")
+        super().__init__(root_dir + "train_with_deductive_closure.owl", root_dir + "valid.owl", root_dir + "test.owl")
 
         self.root_dir = root_dir
         self._deductive_closure_ontology = None

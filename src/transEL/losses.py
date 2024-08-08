@@ -108,7 +108,7 @@ def gci0_loss(data, class_embed, class_offset, margin, neg=False):
 def gci0_bot_loss(data, class_offset, margin, neg=False):
     if neg:
         off_c = th.abs(class_offset(data[:, 0]))
-        loss = th.linalg.norm(th.relu(-off_c + margin), axis=1)
+        loss = th.linalg.norm(th.relu(-off_c + abs(margin)), axis=1)
     else:
         off_c = th.abs(class_offset(data[:, 0]))
         loss = th.linalg.norm(off_c, axis=1)
@@ -155,7 +155,7 @@ def gci1_bot_loss(data, class_embed, class_offset, margin, neg=False):
     off_d = box_d.offset
     
     euc = th.abs(c - d)
-    dst = th.linalg.norm(th.relu(-euc + off_c + off_d - margin), axis=1) # positive margin forces a minimum distance between c and d
+    dst = th.linalg.norm(th.relu(-euc + off_c + off_d - abs(margin)), axis=1) # positive margin forces a minimum distance between c and d
     return dst
 
 @check_output_shape
@@ -209,11 +209,15 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
     box_d_unbounded = Box.unbound(box_d_trans, r_mask, min_bound)
 
     if neg:
-        transitive_fn = Box.non_inclusion
+        unbound_dimension = th.where(r_mask == 1)
+        box_c_trans.center[unbound_dimension] = 0
+        box_d_unbounded.center[unbound_dimension] = 0
+        transitive_loss = Box.non_inclusion(box_c_trans, box_d_unbounded, margin)
+        # distance_loss = th.sigmoid
     else:
-        transitive_fn = Box.inclusion
+        transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, margin)
 
-    transitive_loss = transitive_fn(box_c_trans, box_d_unbounded, margin)
+    
             
     c_non_trans = class_embed(non_trans_data[:, 0])
     off_c_non_trans = th.abs(class_offset(non_trans_data[:, 0]))
@@ -287,11 +291,15 @@ def gci3_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
     box_d_trans = Box(d_trans, off_d_trans)
             
     if neg:
-        loss_fn = Box.non_inclusion
-    else:
-        loss_fn = Box.inclusion
+        unbound_dimension = th.where(r_mask == 1)
+        box_c_unbounded.center[unbound_dimension] = 0
+        box_d_trans.center[unbound_dimension] = 0
 
-    transitive_loss = loss_fn(box_c_unbounded, box_d_trans, margin)
+        transitive_loss = Box.non_inclusion(box_c_unbounded, box_d_trans, margin)
+    else:
+        transitive_loss = Box.inclusion(box_c_unbounded, box_d_trans, margin)
+
+    
 
     c_non_trans = class_embed(non_trans_data[:, 1])
     off_c_non_trans = th.abs(class_offset(non_trans_data[:, 1]))
@@ -304,13 +312,17 @@ def gci3_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
     box_c_non_trans = Box(c_non_trans - r_non_trans, off_c_non_trans)
     box_d_non_trans = Box(d_non_trans, off_d_non_trans)
 
+    if neg:
+        loss_fn = Box.non_inclusion
+    else:
+        loss_fn = Box.inclusion
     non_transitive_loss = loss_fn(box_c_non_trans, box_d_non_trans, margin)
 
     final_output = th.zeros(data.shape[0], device=data.device)
     final_output[mask] = transitive_loss
     final_output[~mask] = non_transitive_loss
     
-    return final_output, trans_data[:, 2], trans_data[:, 0]
+    return final_output, trans_data[:, 2], th.where(r_mask==1) #trans_data[:, 0]
 
 
 @check_output_shape
