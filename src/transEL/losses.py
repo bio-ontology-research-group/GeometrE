@@ -215,7 +215,7 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
         transitive_loss = Box.non_inclusion(box_c_trans, box_d_unbounded, margin)
         # distance_loss = th.sigmoid
     else:
-        transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, margin)
+        transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, - margin)
 
     
             
