@@ -379,13 +379,14 @@ class GeometricELModel(EmbeddingELModel):
                                     
                 self.wandb_logger.log(valid_metrics)
 
-                if valid_mrr > best_mrr:
-                    best_mrr = valid_mrr
-                    curr_tolerance = tolerance
-                    th.save(self.module.state_dict(), self.model_filepath)
-                elif valid_mr < best_mr:
+                # if valid_mrr > best_mrr:
+                    # best_mrr = valid_mrr
+                    # curr_tolerance = tolerance
+                    # th.save(self.module.state_dict(), self.model_filepath)
+                if valid_mr < best_mr:
                     best_mr = valid_mr
                     curr_tolerance = tolerance
+                    th.save(self.module.state_dict(), self.model_filepath)
                 else:
                     curr_tolerance -= 1
 
