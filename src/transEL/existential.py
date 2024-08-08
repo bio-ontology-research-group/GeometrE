@@ -198,7 +198,13 @@ class GeometricELModel(EmbeddingELModel):
         super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath)
 
         self.transitive = transitive
-        self.rbox_data = self.process_rbox_axioms()
+
+        self.relation_to_id = {r: i for i, r in enumerate(self.dataset.object_properties.as_str)}
+
+        ignore = ["http://purl.obolibrary.org/obo/RO_0002092"]
+        ignore_ids = [self.relation_to_id[r] for r in ignore]
+        
+        self.rbox_data = self.process_rbox_axioms(properties_to_ignore=ignore_ids)
         self.transitive_ids = self.rbox_data["transitiveproperty"].to(device)
         self.module = TransitiveELModule(len(self.dataset.classes),
                                          len(self.dataset.object_properties),
@@ -206,7 +212,8 @@ class GeometricELModel(EmbeddingELModel):
                                          embed_dim= self.embed_dim,
                                          margin=module_margin,
                                          transitive=transitive,
-                                         transitive_ids=self.transitive_ids)
+                                         transitive_ids=self.transitive_ids,
+                                         min_bound = 10)
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset, device, evaluate_with_deductive_closure=evaluate_deductive, filter_deductive_closure=filter_deductive)
         self.learning_rate = learning_rate
@@ -217,7 +224,7 @@ class GeometricELModel(EmbeddingELModel):
         self.wandb_logger = wandb_logger
 
 
-    def process_rbox_axioms(self):
+    def process_rbox_axioms(self, properties_to_ignore=[]):
         rbox_axioms = self.dataset.ontology.getRBoxAxioms(Imports.fromBoolean(True))
         rbox_data = {"subobjectproperty": [], "inverseproperty": [], "transitiveproperty": []}
 
@@ -244,6 +251,14 @@ class GeometricELModel(EmbeddingELModel):
                 property_ = axiom.getProperty()
                 property_id = owl2idx[property_]
                 rbox_data["transitiveproperty"].append(property_id)
+
+
+        for prop1, prop2 in rbox_data["inverseproperty"]:
+            if prop1 in rbox_data["transitiveproperty"] and prop2 in rbox_data["transitiveproperty"]:
+                rbox_data["transitiveproperty"].remove(prop2)
+
+        for prop in properties_to_ignore:
+            rbox_data["transitiveproperty"].remove(prop)
                 
         for k, v in rbox_data.items():
             print(f"{k}: {v}")
@@ -279,6 +294,7 @@ class GeometricELModel(EmbeddingELModel):
         criterion = nn.MSELoss()
         
         best_mrr = 0
+        best_mr = float("inf")
         best_loss = float("inf")
         
         num_classes = len(self.dataset.classes)
@@ -311,6 +327,7 @@ class GeometricELModel(EmbeddingELModel):
                     if gci_name != "gci3":
                         pos_logits = self.tbox_forward(batch_data, gci_name)
                     else:
+                        # continue
                         pos_logits, classes_to_fix, dims = self.tbox_forward(batch_data, gci_name)
                     pos_logits = 1 - th.exp(-pos_logits)
                     loss += criterion(pos_logits, th.zeros_like(pos_logits))
@@ -321,6 +338,7 @@ class GeometricELModel(EmbeddingELModel):
                         if gci_name != "gci3":
                             neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
                         else:
+                            # continue
                             neg_logits, _, _ = self.tbox_forward(neg_batch, gci_name, neg=True)
                         neg_logits = 1 - th.exp(-neg_logits)
                         loss += criterion(neg_logits, th.ones_like(neg_logits))
@@ -333,7 +351,7 @@ class GeometricELModel(EmbeddingELModel):
                 loss.backward()
                 optimizer.step()
 
-                self.module.fix_classes(classes_to_fix, dims)
+                # self.module.fix_classes(classes_to_fix, dims)
                 
                 total_train_loss += loss.item()
                                     
@@ -345,6 +363,10 @@ class GeometricELModel(EmbeddingELModel):
 
                 points_per_rel = [v["num_points"] for v in valid_metrics.values()]
                 total_points = sum(points_per_rel)
+
+                # valid_mrr += valid_metrics["http://purl.obolibrary.org/obo/BFO_0000050"]["valid_mrr"]
+                # valid_mr += valid_metrics["http://purl.obolibrary.org/obo/BFO_0000050"]["valid_mr"]
+                
                 for rel, v in valid_metrics.items():
                     valid_mrr += v["valid_mrr"] * v["num_points"]/total_points
                     valid_mr += v["valid_mr"] * v["num_points"]/total_points
@@ -358,6 +380,9 @@ class GeometricELModel(EmbeddingELModel):
                     best_mrr = valid_mrr
                     curr_tolerance = tolerance
                     th.save(self.module.state_dict(), self.model_filepath)
+                elif valid_mr < best_mr:
+                    best_mr = valid_mr
+                    curr_tolerance = tolerance
                 else:
                     curr_tolerance -= 1
 
@@ -379,7 +404,7 @@ class GeometricELModel(EmbeddingELModel):
         self.module.load_state_dict(th.load(self.model_filepath))
         self.module.to(self.device)
         self.module.eval()
-        return self.evaluator.evaluate_by_property(self.module)
+        return self.evaluator.evaluate_by_property(self.module, self.transitive_ids.tolist())
 
 
 class DummyLogger():
