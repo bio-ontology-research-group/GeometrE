@@ -31,7 +31,7 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--dataset_name", "-ds", type=ck.Choice(["go_existential", "foodon_existential"]), default="go_existential")
 @ck.option("--evaluator_name", "-e", default="subsumption", help="Evaluator to use")
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
-@ck.option("--batch_size", "-bs", default=78000, help="Batch size")
+@ck.option("--batch_size", "-bs", default=400000, help="Batch size")
 @ck.option("--module_margin", "-mm", default=0.1, help="Margin for the module")
 @ck.option("--min_bound", "-min", default=1, help="Minimum bound for the module")
 @ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
@@ -213,7 +213,7 @@ class GeometricELModel(EmbeddingELModel):
                                          margin=module_margin,
                                          transitive=transitive,
                                          transitive_ids=self.transitive_ids,
-                                         min_bound = 10)
+                                         min_bound = min_bound)
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset, device, evaluate_with_deductive_closure=evaluate_deductive, filter_deductive_closure=filter_deductive)
         self.learning_rate = learning_rate
@@ -282,9 +282,9 @@ class GeometricELModel(EmbeddingELModel):
         total_dls_size = sum(dls_sizes.values())
         dls_weights = {gci_name: ds_size/total_dls_size for gci_name, ds_size in dls_sizes.items()}
 
-        main_dl = dls["gci0"]
+        main_dl = dls["gci2"]
         logger.info(f"Training with {len(main_dl)} batches of size {self.batch_size}")
-        dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci0"}
+        dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci2"}
         logger.info(f"Dataloaders: {dls_sizes}")
 
         tolerance = 5
@@ -309,17 +309,17 @@ class GeometricELModel(EmbeddingELModel):
             for batch_data, in main_dl:
                 loss = 0
                 batch_data = batch_data.to(self.device)
-                pos_logits = self.tbox_forward(batch_data, "gci0")
+                pos_logits = self.tbox_forward(batch_data, "gci2")
                 neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
-                neg_batch = th.cat([batch_data[:, :1], neg_idxs.unsqueeze(1)], dim=1)
-                neg_logits = self.tbox_forward(neg_batch, "gci0", neg=True)
+                neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+                neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True)
 
                 pos_logits = 1 - th.exp(-pos_logits)
                 neg_logits = 1 - th.exp(-neg_logits)
                 loss += criterion(pos_logits, th.zeros_like(pos_logits)) + criterion(neg_logits, th.ones_like(neg_logits))
                 
                 for gci_name, gci_dl in dls.items():
-                    if gci_name == "gci0":
+                    if gci_name == "gci2":
                         continue
                     batch_data, = next(gci_dl)
                     batch_data = batch_data.to(self.device)
@@ -334,7 +334,10 @@ class GeometricELModel(EmbeddingELModel):
                     
                     if gci_name != "gci1_bot":
                         neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
-                        neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+                        if gci_name == "gci0":
+                            neg_batch = th.cat([batch_data[:, :1], neg_idxs.unsqueeze(1)], dim=1)
+                        else:
+                            neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
                         if gci_name != "gci3":
                             neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
                         else:
