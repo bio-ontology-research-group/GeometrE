@@ -33,6 +33,7 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
 @ck.option("--batch_size", "-bs", default=78000, help="Batch size")
 @ck.option("--module_margin", "-mm", default=0.1, help="Margin for the module")
+@ck.option("--min_bound", "-min", default=1, help="Minimum bound for the module")
 @ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
 @ck.option("--learning_rate", "-lr", default=0.001, help="Learning rate")
 @ck.option("--epochs", "-ep", default=10000, help="Number of epochs")
@@ -45,7 +46,7 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--no_sweep", "-ns", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, evaluator_name, embed_dim, batch_size,
-         module_margin, loss_margin, learning_rate, epochs,
+         module_margin, min_bound, loss_margin, learning_rate, epochs,
          evaluate_every, evaluate_deductive, filter_deductive,
          transitive, device, wandb_description, no_sweep, only_test):
 
@@ -70,6 +71,7 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         wandb_logger.log({"dataset_name": dataset_name,
                           "embed_dim": embed_dim,
                           "module_margin": module_margin,
+                          "min_bound": min_bound,
                           "learning_rate": learning_rate,
                           "transitive": transitive
                           })
@@ -77,6 +79,7 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         dataset_name = wandb.config.dataset_name
         embed_dim = wandb.config.embed_dim
         module_margin = wandb.config.module_margin
+        min_bound = wandb.config.min_bound
         learning_rate = wandb.config.learning_rate
         transitive = wandb.config.transitive
 
@@ -93,9 +96,9 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
     model_dir = f"{root_dir}/../models/"
     os.makedirs(model_dir, exist_ok=True)
 
-    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{transitive}.pt"
+    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{min_bound}_{loss_margin}_{learning_rate}_{transitive}.pt"
     model = GeometricELModel(evaluator_name, dataset, batch_size,
-                             embed_dim, module_margin, loss_margin,
+                             embed_dim, module_margin, min_bound, loss_margin,
                              learning_rate, model_filepath, epochs,
                              evaluate_every, evaluate_deductive,
                              filter_deductive, transitive, device, wandb_logger)
@@ -188,7 +191,7 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
 
 class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
-                 module_margin, loss_margin, learning_rate,
+                 module_margin, min_bound, loss_margin, learning_rate,
                  model_filepath, epochs, evaluate_every,
                  evaluate_deductive, filter_deductive, transitive,
                  device, wandb_logger):
