@@ -18,8 +18,8 @@ class TransitiveELModule(ELModule):
         self.embed_dim = embed_dim
         self.transitive = transitive
 
-        self.class_center = self.init_embeddings(nb_ont_classes, embed_dim, a = -min_bound, b=1)
-        self.class_offset = self.init_embeddings(nb_ont_classes, embed_dim)
+        self.class_lower = self.init_embeddings(nb_ont_classes, embed_dim, a = 0, b=2.7183)
+        self.class_delta = self.init_embeddings(nb_ont_classes, embed_dim)
         self.individual_embed = self.init_embeddings(nb_individuals, embed_dim)
 
         self.rel_embed = nn.Embedding(nb_rels, embed_dim)
@@ -46,8 +46,8 @@ class TransitiveELModule(ELModule):
     # def fix_classes(self, ids, dims):
         
         # if ids is not None:
-            # centers = self.class_center(ids)
-            # offsets = th.abs(self.class_offset(ids))
+            # centers = self.class_lower(ids)
+            # offsets = th.abs(self.class_delta(ids))
 
             # lower = centers - offsets
             # upper = centers + offsets
@@ -58,12 +58,12 @@ class TransitiveELModule(ELModule):
             # new_centers = (upper + lower) / 2
             # new_offsets = (upper - lower) / 2
         
-            # self.class_center.weight.data[ids] = new_centers
-            # self.class_offset.weight.data[ids] = new_offsets
+            # self.class_lower.weight.data[ids] = new_centers
+            # self.class_delta.weight.data[ids] = new_offsets
 
 
-        # all_centers = self.class_center.weight.data
-        # all_offsets = th.abs(self.class_offset.weight.data)
+        # all_centers = self.class_lower.weight.data
+        # all_offsets = th.abs(self.class_delta.weight.data)
 
         # all_lower = all_centers - all_offsets
         # all_upper = all_centers + all_offsets
@@ -72,14 +72,14 @@ class TransitiveELModule(ELModule):
         # all_offsets = (all_upper - all_lower) / 2
         # all_centers = (all_upper + all_lower) / 2
 
-        # self.class_center.weight.data = all_centers
-        # self.class_offset.weight.data = all_offsets
+        # self.class_lower.weight.data = all_centers
+        # self.class_delta.weight.data = all_offsets
         
         
     
     def class_assertion_loss(self, data, neg=False):
-        return L.class_assertion_loss(data, self.class_center,
-                                      self.class_offset, self.individual_embed, self.margin, neg=neg)
+        return L.class_assertion_loss(data, self.class_lower,
+                                      self.class_delta, self.individual_embed, self.margin, neg=neg)
     
     def object_property_assertion_loss(self, data, neg=False):
         return L.object_property_assertion_loss(data,
@@ -94,39 +94,39 @@ class TransitiveELModule(ELModule):
 
     
     def gci0_loss(self, data, neg=False):
-        return L.gci0_loss(data, self.class_center,
-                           self.class_offset, self.margin, neg=neg)
+        return L.gci0_loss(data, self.class_lower,
+                           self.class_delta, self.margin, neg=neg)
 
     def gci0_bot_loss(self, data, neg=False):
-        return L.gci0_bot_loss(data, self.class_center,
-                               self.class_offset, self.margin, neg=neg)
+        return L.gci0_bot_loss(data, self.class_lower,
+                               self.class_delta, self.margin, neg=neg)
     
     def gci1_loss(self, data, neg=False):
-        return L.gci1_loss(data, self.class_center,
-                           self.class_offset, self.margin, neg=neg)
+        return L.gci1_loss(data, self.class_lower,
+                           self.class_delta, self.margin, neg=neg)
 
     def gci1_bot_loss(self, data, neg=False):
-        return L.gci1_bot_loss(data, self.class_center,
-                               self.class_offset,  self.margin, neg=neg)
+        return L.gci1_bot_loss(data, self.class_lower,
+                               self.class_delta,  self.margin, neg=neg)
 
     def gci2_loss(self, data, neg=False):
-        return L.gci2_loss(data, self.class_center,
-                           self.class_offset,
+        return L.gci2_loss(data, self.class_lower,
+                           self.class_delta,
                            self.rel_embed, self.rel_mask,
                            self.min_bound, self.transitive_ids,
                            self.margin, self.transitive, neg=neg)
 
     def gci3_loss(self, data, neg=False):
-        return L.gci3_loss(data, self.class_center,
-                           self.class_offset,
+        return L.gci3_loss(data, self.class_lower,
+                           self.class_delta,
                            self.rel_embed, self.rel_mask,
                            self.min_bound, self.transitive_ids,
                            self.margin, self.transitive, neg=neg)
 
     def gci3_bot_loss(self, data, neg=False):
-        return L.gci3_bot_loss(data, self.class_offset, self.margin, neg=neg)
+        return L.gci3_bot_loss(data, self.class_delta, self.margin, neg=neg)
 
 
-    # def regularization_loss(self, reg_factor=0.1):
+    def regularization_loss(self, reg_factor=0.1):
         # return L.regularization_loss(self.rel_embed, self.rel_mask, self.transitive_ids)
-        # return L.regularization_loss(self.class_center, self.class_offset, self.individual_embed, self.min_bound, reg_factor = reg_factor)
+        return L.regularization_loss(self.class_lower, reg_factor = reg_factor)

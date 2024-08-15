@@ -353,7 +353,11 @@ class GeometricELModel(EmbeddingELModel):
                         neg_logits = 1 - th.exp(-neg_logits)
                         loss += criterion(neg_logits, th.ones_like(neg_logits))
 
-                                     
+
+                if self.transitive:
+                    loss += self.module.regularization_loss()
+
+                        
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
