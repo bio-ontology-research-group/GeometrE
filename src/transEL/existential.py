@@ -282,17 +282,19 @@ class GeometricELModel(EmbeddingELModel):
         total_dls_size = sum(dls_sizes.values())
         dls_weights = {gci_name: ds_size/total_dls_size for gci_name, ds_size in dls_sizes.items()}
 
-        main_dl = dls["gci2"]
+        # main_dl = dls["gci2"]
+        main_dl = dls["gci0"]
         logger.info(f"Training with {len(main_dl)} batches of size {self.batch_size}")
-        dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci2"}
+        # dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci2"}
+        dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci0"}
         logger.info(f"Dataloaders: {dls_sizes}")
 
         tolerance = 5
         curr_tolerance = tolerance
 
         optimizer = th.optim.Adam(self.module.parameters(), lr=self.learning_rate)
-        criterion = nn.MSELoss()
-        
+        # criterion = nn.MSELoss()
+        criterion = nn.BCELoss()
         best_mrr = 0
         best_mr = float("inf")
         best_loss = float("inf")
@@ -309,25 +311,29 @@ class GeometricELModel(EmbeddingELModel):
             for batch_data, in main_dl:
                 loss = 0
                 batch_data = batch_data.to(self.device)
-                pos_logits = self.tbox_forward(batch_data, "gci2")
+                # pos_logits = self.tbox_forward(batch_data, "gci2")
+                pos_logits = self.tbox_forward(batch_data, "gci0")
                 neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
-                neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
-                neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True)
+                # neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+                neg_batch = th.cat([batch_data[:, :1], neg_idxs.unsqueeze(1)], dim=1)
+                # neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True)
+                neg_logits = self.tbox_forward(neg_batch, "gci0", neg=True)
 
                 pos_logits = 1 - th.exp(-pos_logits)
                 neg_logits = 1 - th.exp(-neg_logits)
                 loss += criterion(pos_logits, th.zeros_like(pos_logits)) + criterion(neg_logits, th.ones_like(neg_logits))
                 
                 for gci_name, gci_dl in dls.items():
-                    if gci_name == "gci2":
+                    # if gci_name == "gci2":
+                    if gci_name == "gci0":
                         continue
+                        
                     batch_data, = next(gci_dl)
                     batch_data = batch_data.to(self.device)
 
                     if gci_name != "gci3":
                         pos_logits = self.tbox_forward(batch_data, gci_name)
                     else:
-                        # continue
                         pos_logits, classes_to_fix, dims = self.tbox_forward(batch_data, gci_name)
                     pos_logits = 1 - th.exp(-pos_logits)
                     loss += criterion(pos_logits, th.zeros_like(pos_logits))
@@ -338,6 +344,7 @@ class GeometricELModel(EmbeddingELModel):
                             neg_batch = th.cat([batch_data[:, :1], neg_idxs.unsqueeze(1)], dim=1)
                         else:
                             neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+
                         if gci_name != "gci3":
                             neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
                         else:
@@ -346,16 +353,11 @@ class GeometricELModel(EmbeddingELModel):
                         neg_logits = 1 - th.exp(-neg_logits)
                         loss += criterion(neg_logits, th.ones_like(neg_logits))
 
-                 # if self.transitive:
-                    # loss += self.module.regularization_loss()
-                
-                                                
+                                     
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                # self.module.fix_classes(classes_to_fix, dims)
-                
                 total_train_loss += loss.item()
                                     
             if epoch % self.evaluate_every == 0:
@@ -367,8 +369,6 @@ class GeometricELModel(EmbeddingELModel):
                 points_per_rel = [v["num_points"] for v in valid_metrics.values()]
                 total_points = sum(points_per_rel)
 
-                # valid_mrr += valid_metrics["http://purl.obolibrary.org/obo/BFO_0000050"]["valid_mrr"]
-                # valid_mr += valid_metrics["http://purl.obolibrary.org/obo/BFO_0000050"]["valid_mr"]
                 
                 for rel, v in valid_metrics.items():
                     valid_mrr += v["valid_mrr"] * v["num_points"]/total_points

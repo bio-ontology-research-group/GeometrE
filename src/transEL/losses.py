@@ -40,6 +40,8 @@ class Box():
         """
 
         euc_distance = th.abs(box1.center - box2.center)
+        # euc_distance = (box1.center - box2.center)**2
+        # loss = euc_distance + box1.offset
         return th.linalg.norm(th.relu(euc_distance + box1.offset - box2.offset - margin), axis=1)
 
     @check_output_shape
@@ -213,9 +215,8 @@ def gci2_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
         box_c_trans.center[unbound_dimension] = 0
         box_d_unbounded.center[unbound_dimension] = 0
         transitive_loss = Box.non_inclusion(box_c_trans, box_d_unbounded, margin)
-        # distance_loss = th.sigmoid
     else:
-        transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, - margin)
+        transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, margin)
 
     
             
@@ -322,7 +323,7 @@ def gci3_loss(data, class_embed, class_offset, rel_embed, rel_mask, min_bound, t
     final_output[mask] = transitive_loss
     final_output[~mask] = non_transitive_loss
     
-    return final_output, trans_data[:, 2], th.where(r_mask==1) #trans_data[:, 0]
+    return final_output, trans_data[:, 2], th.where(r_mask==1)
 
 
 @check_output_shape

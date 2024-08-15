@@ -18,20 +18,13 @@ class TransitiveELModule(ELModule):
         self.embed_dim = embed_dim
         self.transitive = transitive
 
-        # self.class_center = nn.Embedding(nb_ont_classes, embed_dim)
-        # nn.init.uniform_(self.class_center.weight, a=-1, b=1)
         self.class_center = self.init_embeddings(nb_ont_classes, embed_dim, a = -min_bound, b=1)
-
-        # self.class_offset = nn.Embedding(nb_ont_classes, embed_dim)
-        # nn.init.uniform_(self.class_offset.weight, a=-1, b=1)
         self.class_offset = self.init_embeddings(nb_ont_classes, embed_dim)
         self.individual_embed = self.init_embeddings(nb_individuals, embed_dim)
 
         self.rel_embed = nn.Embedding(nb_rels, embed_dim)
         nn.init.uniform_(self.rel_embed.weight, a=-1, b=1)
 
-        # self.rel_embed = self.init_embeddings(nb_rels, embed_dim)
-                                        
         self.rel_mask = nn.Embedding(nb_rels, embed_dim)
         self.rel_mask.weight.data.fill_(0)
         self.rel_mask.weight.data[:nb_rels, :nb_rels] = th.eye(nb_rels)
@@ -45,43 +38,42 @@ class TransitiveELModule(ELModule):
     def init_embeddings(self, n_embeddings, embed_dim, a = -1, b = 1):
         embeddings = nn.Embedding(n_embeddings, embed_dim)
         nn.init.uniform_(embeddings.weight, a=a, b=b)
-        # nn.init.xavier_uniform_(embeddings.weight)
         weight_data_normalized = th.linalg.norm(embeddings.weight.data, axis=1).reshape(-1, 1)
         embeddings.weight.data /= weight_data_normalized
         return embeddings
 
 
-    def fix_classes(self, ids, dims):
+    # def fix_classes(self, ids, dims):
         
-        if ids is not None:
-            centers = self.class_center(ids)
-            offsets = th.abs(self.class_offset(ids))
+        # if ids is not None:
+            # centers = self.class_center(ids)
+            # offsets = th.abs(self.class_offset(ids))
 
-            lower = centers - offsets
-            upper = centers + offsets
+            # lower = centers - offsets
+            # upper = centers + offsets
 
-            lower[dims] = -self.min_bound
+            # lower[dims] = -self.min_bound
 
         
-            new_centers = (upper + lower) / 2
-            new_offsets = (upper - lower) / 2
+            # new_centers = (upper + lower) / 2
+            # new_offsets = (upper - lower) / 2
         
-            self.class_center.weight.data[ids] = new_centers
-            self.class_offset.weight.data[ids] = new_offsets
+            # self.class_center.weight.data[ids] = new_centers
+            # self.class_offset.weight.data[ids] = new_offsets
 
 
-        all_centers = self.class_center.weight.data
-        all_offsets = th.abs(self.class_offset.weight.data)
+        # all_centers = self.class_center.weight.data
+        # all_offsets = th.abs(self.class_offset.weight.data)
 
-        all_lower = all_centers - all_offsets
-        all_upper = all_centers + all_offsets
-        all_lower = th.max(all_lower, th.full_like(all_lower, -self.min_bound))
+        # all_lower = all_centers - all_offsets
+        # all_upper = all_centers + all_offsets
+        # all_lower = th.max(all_lower, th.full_like(all_lower, -self.min_bound))
 
-        all_offsets = (all_upper - all_lower) / 2
-        all_centers = (all_upper + all_lower) / 2
+        # all_offsets = (all_upper - all_lower) / 2
+        # all_centers = (all_upper + all_lower) / 2
 
-        self.class_center.weight.data = all_centers
-        self.class_offset.weight.data = all_offsets
+        # self.class_center.weight.data = all_centers
+        # self.class_offset.weight.data = all_offsets
         
         
     
@@ -135,6 +127,6 @@ class TransitiveELModule(ELModule):
         return L.gci3_bot_loss(data, self.class_offset, self.margin, neg=neg)
 
 
-    def regularization_loss(self, reg_factor=0.1):
-        return L.regularization_loss(self.rel_embed, self.rel_mask, self.transitive_ids)
+    # def regularization_loss(self, reg_factor=0.1):
+        # return L.regularization_loss(self.rel_embed, self.rel_mask, self.transitive_ids)
         # return L.regularization_loss(self.class_center, self.class_offset, self.individual_embed, self.min_bound, reg_factor = reg_factor)

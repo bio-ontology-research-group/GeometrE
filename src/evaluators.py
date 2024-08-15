@@ -81,8 +81,8 @@ class Evaluator:
             mask = mask1 | mask2
             deductive_closure_tuples = self.deductive_closure_tuples[~mask]
             
-            eval_tuples = th.cat([eval_tuples, deductive_closure_tuples], dim=0)
-            # eval_tuples = deductive_closure_tuples
+            # eval_tuples = th.cat([eval_tuples, deductive_closure_tuples], dim=0)
+            eval_tuples = deductive_closure_tuples
         dataloader = FastTensorDataLoader(eval_tuples, batch_size=self.batch_size, shuffle=False)
 
         metrics = dict()
@@ -511,7 +511,7 @@ class RelationEvaluator(Evaluator):
                 
         # return average_metrics
 
-    def evaluate_base(self, model, eval_tuples, mode="test", **kwargs):
+    def evaluate_base(self, model, eval_tuples, mode="test", relation_id = -1, **kwargs):
         num_heads, num_tails = len(self.evaluation_heads), len(self.evaluation_tails)
         model.eval()
         if not mode in ["valid", "test"]:
@@ -519,13 +519,18 @@ class RelationEvaluator(Evaluator):
 
 
         if self.evaluate_with_deductive_closure:
-            mask1 = (self.deductive_closure_tuples.unsqueeze(1) == self.train_tuples).all(dim=-1).any(dim=-1)
-            mask2 = (self.deductive_closure_tuples.unsqueeze(1) == self.valid_tuples).all(dim=-1).any(dim=-1)
+            deductive_tuples = self.deductive_closure_tuples[self.deductive_closure_tuples[:, 1] == relation_id]
+            train_tuples = self.train_tuples[self.train_tuples[:, 1] == relation_id]
+            valid_tuples = self.valid_tuples[self.valid_tuples[:, 1] == relation_id]
+            mask1 = (deductive_tuples.unsqueeze(1) == train_tuples).all(dim=-1).any(dim=-1)
+            mask2 = (deductive_tuples.unsqueeze(1) == valid_tuples).all(dim=-1).any(dim=-1)
+            # mask1 = (self.deductive_closure_tuples.unsqueeze(1) == self.train_tuples).all(dim=-1).any(dim=-1)
+            # mask2 = (self.deductive_closure_tuples.unsqueeze(1) == self.valid_tuples).all(dim=-1).any(dim=-1)
             mask = mask1 | mask2
-            deductive_closure_tuples = self.deductive_closure_tuples[~mask]
+            deductive_closure_tuples = deductive_tuples[~mask]
             
-            eval_tuples = th.cat([eval_tuples, deductive_closure_tuples], dim=0)
-            # eval_tuples = deductive_closure_tuples
+            # eval_tuples = th.cat([eval_tuples, deductive_closure_tuples], dim=0)
+            eval_tuples = deductive_tuples
         dataloader = FastTensorDataLoader(eval_tuples, batch_size=self.batch_size, shuffle=False)
 
         metrics = dict()
@@ -537,9 +542,9 @@ class RelationEvaluator(Evaluator):
             hits_k = dict({"1": 0, "3": 0, "10": 0, "50": 0, "100": 0})
             f_hits_k = dict({"1": 0, "3": 0, "10": 0, "50": 0, "100": 0})
         
-            filtering_labels = self.get_filtering_labels(num_heads, num_tails, **kwargs)
+            filtering_labels = self.get_filtering_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
             if self.evaluate_with_deductive_closure:
-                deductive_labels = self.get_deductive_labels(num_heads, num_tails, **kwargs)
+                deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
             
         with th.no_grad():
             for batch, in dataloader:
