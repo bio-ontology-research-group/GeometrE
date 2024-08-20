@@ -201,7 +201,7 @@ class GeometricELModel(EmbeddingELModel):
 
         self.relation_to_id = {r: i for i, r in enumerate(self.dataset.object_properties.as_str)}
 
-        ignore = ["http://purl.obolibrary.org/obo/RO_0002092"]
+        ignore = ["http://purl.obolibrary.org/obo/RO_0002092", "http://purl.obolibrary.org/obo/RO_0002211"]
         ignore_ids = [self.relation_to_id[r] for r in ignore]
         
         self.rbox_data = self.process_rbox_axioms(properties_to_ignore=ignore_ids)
@@ -383,14 +383,14 @@ class GeometricELModel(EmbeddingELModel):
                                     
                 self.wandb_logger.log(valid_metrics)
 
-                # if valid_mrr > best_mrr:
-                    # best_mrr = valid_mrr
-                    # curr_tolerance = tolerance
-                    # th.save(self.module.state_dict(), self.model_filepath)
-                if valid_mr < best_mr:
-                    best_mr = valid_mr
+                if valid_mrr > best_mrr:
+                    best_mrr = valid_mrr
                     curr_tolerance = tolerance
                     th.save(self.module.state_dict(), self.model_filepath)
+                # if valid_mr < best_mr:
+                    # best_mr = valid_mr
+                    # curr_tolerance = tolerance
+                    # th.save(self.module.state_dict(), self.model_filepath)
                 else:
                     curr_tolerance -= 1
 

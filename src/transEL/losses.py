@@ -65,7 +65,7 @@ class Box():
 
     @staticmethod
     def unbound(box, rel_mask, min_bound):
-        min_bound = 0
+        min_bound = -1
         unbound_dimension = th.where(rel_mask == 1)
         # print(unbound_dimension)
         # print(unbound_dimension[0].shape, unbound_dimension[1].shape)
@@ -78,6 +78,7 @@ class Box():
         
         new_lower_corner[unbound_dimension] = min_bound
         delta = new_upper_corner - new_lower_corner
+        delta[unbound_dimension] = new_upper_corner[unbound_dimension]
         return Box(new_lower_corner, delta)
  
 
@@ -221,10 +222,14 @@ def gci1_bot_loss(data, class_lower, class_delta, margin, neg=False):
     return loss
 
 @check_output_shape
-def normal_gci2_loss(data, class_lower, class_delta, rel_embed, margin, neg=False):
+def normal_gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg=False):
     c = class_lower(data[:, 0])
     r = rel_embed(data[:, 1])
+    r_mask = rel_mask(data[:, 1])
     d = class_lower(data[:, 2])
+
+    trans_mask = th.isin(data[:, 1], transitive_ids)
+    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
 
     off_c = th.abs(class_delta(data[:, 0]))
     off_d = th.abs(class_delta(data[:, 2]))
@@ -245,7 +250,7 @@ def normal_gci2_loss(data, class_lower, class_delta, rel_embed, margin, neg=Fals
 def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, transitive_ids, margin, transitive, neg=False, evaluate=False): #adapted
 
     if not transitive:
-        return normal_gci2_loss(data, class_lower, class_delta, rel_embed, margin, neg = neg)
+        return normal_gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg = neg)
 
     
     r = data[:, 1]
@@ -305,11 +310,15 @@ def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, tr
     return final_output
 
 
-def normal_gci3_loss(data, class_lower, class_delta, rel_embed, margin, neg=False):
+def normal_gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg=False):
     r = rel_embed(data[:, 0])
+    r_mask = rel_mask(data[:, 0])
     c = class_lower(data[:, 1])
     d = class_lower(data[:, 2])
 
+    trans_mask = th.isin(data[:, 0], transitive_ids)
+    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
+    
     off_c = th.abs(class_delta(data[:, 1]))
     off_d = th.abs(class_delta(data[:, 2]))
 
@@ -328,7 +337,7 @@ def normal_gci3_loss(data, class_lower, class_delta, rel_embed, margin, neg=Fals
 def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, transitive_ids, margin, transitive, neg=False):
 
     if not transitive:
-        return normal_gci3_loss(data, class_lower, class_delta, rel_embed, margin, neg)
+        return normal_gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg)
     
     r_raw = data[:, 0]
     mask = th.isin(r_raw, transitive_ids)
@@ -352,7 +361,7 @@ def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, tr
     box_d_trans = Box(d_trans, off_d_trans)
             
     if neg:
-        unbound_dimension = th.where(r_mask == 1)
+        # unbound_dimension = th.where(r_mask == 1)
         # box_c_unbounded.lower_corner[unbound_dimension] = 0
         # box_d_trans.lower_corner[unbound_dimension] = 0
 

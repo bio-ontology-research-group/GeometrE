@@ -577,17 +577,23 @@ class RelationEvaluator(Evaluator):
                     mrr += 1 / rank
 
                     if mode == "test":
-                        f_preds = preds * filtering_labels[head].to(preds.device)
+                        filtering = filtering_labels[head].to(preds.device)
+                        # f_preds = preds * filtering_labels[head].to(preds.device)
 
                         if self.evaluate_with_deductive_closure:
                             ded_labels = deductive_labels[head].to(preds.device)
-                            ded_labels[tail] = 1
-                            f_preds = f_preds * ded_labels
+                            all_filtering = th.max(filtering, ded_labels)
+                            
+                        else:
+                            all_filtering = filtering
+                        all_filtering[tail] = 1
+                        f_preds = preds * all_filtering
 
                         f_order = th.argsort(f_preds, descending=False)
                         f_rank = th.where(f_order == tail)[0].item() + 1
                         fmr += f_rank
                         fmrr += 1 / f_rank
+                        assert f_rank <= rank, f"Rank: {rank}, F-Rank: {f_rank}"
                     
                                                                 
                     if mode == "test":
