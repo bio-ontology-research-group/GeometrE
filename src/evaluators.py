@@ -469,7 +469,7 @@ class RelationEvaluator(Evaluator):
         if not mode in ["valid", "test"]:
             raise ValueError(f"Mode must be either 'valid' or 'test', not {mode}")
 
-        
+        print(f"Relations to evaluate: {relations_to_evaluate}")
         # if relations_to_evaluate is None:
             # relations_to_evaluate = range(len(self.dataset.object_properties))
         # elif isinstance(relations_to_evaluate[0], str):
@@ -482,6 +482,8 @@ class RelationEvaluator(Evaluator):
         elif mode == "test":
             eval_tuples = self.test_tuples
 
+        logger.debug(f"Shape of eval_tuples: {eval_tuples.shape}")
+        
         for rel in relations_to_evaluate:
             rel_str = self.id_to_relation[rel]
             logger.debug(f"Evaluating relation {rel_str}. Id: {rel}")
@@ -532,7 +534,7 @@ class RelationEvaluator(Evaluator):
             # eval_tuples = th.cat([eval_tuples, deductive_closure_tuples], dim=0)
             eval_tuples = deductive_tuples
         dataloader = FastTensorDataLoader(eval_tuples, batch_size=self.batch_size, shuffle=False)
-
+        
         metrics = dict()
         mrr, fmrr = 0, 0
         mr, fmr = 0, 0

@@ -28,7 +28,7 @@ logger.setLevel(logging.INFO)
 th.autograd.set_detect_anomaly(True)
 
 @ck.command()
-@ck.option("--dataset_name", "-ds", type=ck.Choice(["go_existential", "foodon_existential"]), default="go_existential")
+@ck.option("--dataset_name", "-ds", type=ck.Choice(["go_existential", "foodon_existential", "go_plus_existential"]), default="go_existential")
 @ck.option("--evaluator_name", "-e", default="subsumption", help="Evaluator to use")
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
 @ck.option("--batch_size", "-bs", default=400000, help="Batch size")
@@ -177,6 +177,8 @@ def dataset_resolver(dataset_name):
         root_dir = "../../use_cases/go_existential/data/"
     elif dataset_name.lower() == "foodon_existential":
         root_dir = "../../use_cases/foodon_existential/data/"
+    elif dataset_name.lower() == "go_plus_existential":
+        root_dir = "../../use_cases/go_plus_existential/data/"
     else:
         raise ValueError(f"Dataset {dataset_name} not found")
 
@@ -201,7 +203,8 @@ class GeometricELModel(EmbeddingELModel):
 
         self.relation_to_id = {r: i for i, r in enumerate(self.dataset.object_properties.as_str)}
 
-        ignore = ["http://purl.obolibrary.org/obo/RO_0002092", "http://purl.obolibrary.org/obo/RO_0002211"]
+        # ignore = ["http://purl.obolibrary.org/obo/RO_0002092", "http://purl.obolibrary.org/obo/RO_0002211"]
+        ignore = []
         ignore_ids = [self.relation_to_id[r] for r in ignore]
         
         self.rbox_data = self.process_rbox_axioms(properties_to_ignore=ignore_ids)
@@ -365,8 +368,9 @@ class GeometricELModel(EmbeddingELModel):
                 total_train_loss += loss.item()
                                     
             if epoch % self.evaluate_every == 0:
+                print(self.transitive_ids)
                 valid_metrics = self.evaluator.evaluate(self.module, mode="valid", relations_to_evaluate=self.transitive_ids.tolist())
-
+                print(valid_metrics)
                 valid_mrr = 0
                 valid_mr = 0
 

@@ -21,8 +21,9 @@ logger.setLevel(logging.INFO)
 @ck.command()
 @ck.option("--input_ontology", "-i", type=ck.Path(exists=True), required=True)
 @ck.option("--percentage", "-p", type=float, default=0.3)
+@ck.option("--min_count", "-min", type=int, default=100)
 @ck.option("--random_seed", "-seed", type=int, default=0)
-def main(input_ontology, percentage, random_seed):
+def main(input_ontology, percentage, min_count, random_seed):
     """Remove axioms from an ontology. It will remove subclass axioms of
         the form C subclassof some R. D. C and D are concept names and
         R is a role. The percentage value indicates the amount of
@@ -71,6 +72,9 @@ def main(input_ontology, percentage, random_seed):
         
     for rel_str, axioms in relations_axioms.items():
         num_axioms = len(axioms)
+        if num_axioms < min_count:
+            print(f"Relation {rel_str}: Skipping relation with {num_axioms} axioms. Minimum count is {min_count}")
+            continue
         random.shuffle(axioms)
         axioms_to_remove = axioms[:int(num_axioms*percentage)]
         removed_axioms[rel_str] = axioms_to_remove
