@@ -4,6 +4,7 @@ import mowl
 mowl.init_jvm("10g")
 from mowl.base_models.elmodel import EmbeddingELModel
 from mowl.utils.random import seed_everything
+from mowl.utils.data import FastTensorDataLoader
 from org.semanticweb.owlapi.model.parameters import Imports
 from org.semanticweb.owlapi.model import AxiomType as Ax
 from evaluators import SubsumptionEvaluator
@@ -78,13 +79,14 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         module_margin = wandb.config.module_margin
         learning_rate = wandb.config.learning_rate
         transitive = wandb.config.transitive
+
         if transitive == "yes":
             transitive = True
         elif transitive == "no":
             transitive = False
         else:
             raise ValueError(f"Transitive must be either 'yes' or 'no'")
-       
+
     
     root_dir, dataset = dataset_resolver(dataset_name)
 
@@ -107,7 +109,7 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
 
              
     wandb_logger.log(metrics)
-        
+    wandb_logger.finish()
 
 def print_as_md(overall_metrics):
     
@@ -165,6 +167,7 @@ class GeometricELModel(EmbeddingELModel):
                  device, wandb_logger):
         super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath)
 
+        self.transitive = transitive
         self.rbox_data = self.process_rbox_axioms()
         transitive_ids = self.rbox_data["transitiveproperty"].to(device)
         self.module = TransitiveELModule(len(self.dataset.classes),
@@ -211,7 +214,12 @@ class GeometricELModel(EmbeddingELModel):
                 property_ = axiom.getProperty()
                 property_id = owl2idx[property_]
                 rbox_data["transitiveproperty"].append(property_id)
-                
+
+
+        for prop1, prop2 in rbox_data["inverseproperty"]:
+            if prop1 in rbox_data["transitiveproperty"] and prop2 in rbox_data["transitiveproperty"]:
+                rbox_data["transitiveproperty"].remove(prop2)
+
         for k, v in rbox_data.items():
             print(f"{k}: {v}")
                 
@@ -228,7 +236,7 @@ class GeometricELModel(EmbeddingELModel):
  
     def train(self):
 
-        dls = {gci_name: DataLoader(ds, batch_size=self.batch_size, shuffle=True)
+        dls = {gci_name: FastTensorDataLoader(ds.data, batch_size=self.batch_size, shuffle=True)
                for gci_name, ds in self.training_datasets.items() if len(ds) > 0}
         dls_sizes = {gci_name: len(ds) for gci_name, ds in self.training_datasets.items() if len(ds) > 0}
         total_dls_size = sum(dls_sizes.values())
@@ -243,9 +251,9 @@ class GeometricELModel(EmbeddingELModel):
         curr_tolerance = tolerance
 
         optimizer = th.optim.Adam(self.module.parameters(), lr=self.learning_rate)
-        criterion = nn.MSELoss()
-        
+        criterion = nn.BCELoss()
         best_mrr = 0
+        best_mr = float("inf")
         best_loss = float("inf")
         
         num_classes = len(self.dataset.classes)
@@ -256,9 +264,9 @@ class GeometricELModel(EmbeddingELModel):
             
 
             total_train_loss = 0
-            loss = 0
-            for batch_data in main_dl:
-
+            
+            for batch_data, in main_dl:
+                loss = 0
                 batch_data = batch_data.to(self.device)
                 pos_logits = self.tbox_forward(batch_data, "gci0")
                 neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
@@ -268,24 +276,37 @@ class GeometricELModel(EmbeddingELModel):
                 # loss += pos_logits.mean() + neg_logits.mean()
                 # loss += (1-th.exp(-pos_logits)).mean() + th.exp(-neg_logits).mean()
 
+                pos_logits = 1 - th.exp(-pos_logits)
+                neg_logits = 1 - th.exp(-neg_logits)
                 loss += criterion(pos_logits, th.zeros_like(pos_logits)) + criterion(neg_logits, th.ones_like(neg_logits))
                 
                 for gci_name, gci_dl in dls.items():
                     if gci_name == "gci0":
                         continue
 
-                    batch_data = next(gci_dl).to(self.device)
+                    batch_data, = next(gci_dl)
+                    batch_data = batch_data.to(self.device)
                     pos_logits = self.tbox_forward(batch_data, gci_name)
+                    pos_logits = 1 - th.exp(-pos_logits)
                     loss += criterion(pos_logits, th.zeros_like(pos_logits))
                     
                     if gci_name != "gci1_bot":
                         neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
-                        neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+                        if gci_name == "gci0":
+                            neg_batch = th.cat([batch_data[:, :1], neg_idxs.unsqueeze(1)], dim=1)
+                        else:
+                            neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
+
                         neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
+                                                                                
+                        neg_logits = 1 - th.exp(-neg_logits)
                         loss += criterion(neg_logits, th.ones_like(neg_logits))
-                loss += self.module.regularization_loss()
-                
-                                                
+
+
+                if self.transitive:
+                    loss += self.module.regularization_loss()
+
+                        
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()

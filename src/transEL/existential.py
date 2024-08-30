@@ -33,7 +33,6 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
 @ck.option("--batch_size", "-bs", default=400000, help="Batch size")
 @ck.option("--module_margin", "-mm", default=0.1, help="Margin for the module")
-@ck.option("--min_bound", "-min", default=1, help="Minimum bound for the module")
 @ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
 @ck.option("--learning_rate", "-lr", default=0.001, help="Learning rate")
 @ck.option("--epochs", "-ep", default=10000, help="Number of epochs")
@@ -46,7 +45,7 @@ th.autograd.set_detect_anomaly(True)
 @ck.option("--no_sweep", "-ns", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, evaluator_name, embed_dim, batch_size,
-         module_margin, min_bound, loss_margin, learning_rate, epochs,
+         module_margin, loss_margin, learning_rate, epochs,
          evaluate_every, evaluate_deductive, filter_deductive,
          transitive, device, wandb_description, no_sweep, only_test):
 
@@ -71,7 +70,6 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         wandb_logger.log({"dataset_name": dataset_name,
                           "embed_dim": embed_dim,
                           "module_margin": module_margin,
-                          "min_bound": min_bound,
                           "learning_rate": learning_rate,
                           "transitive": transitive
                           })
@@ -79,7 +77,6 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         dataset_name = wandb.config.dataset_name
         embed_dim = wandb.config.embed_dim
         module_margin = wandb.config.module_margin
-        min_bound = wandb.config.min_bound
         learning_rate = wandb.config.learning_rate
         transitive = wandb.config.transitive
 
@@ -96,9 +93,9 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
     model_dir = f"{root_dir}/../models/"
     os.makedirs(model_dir, exist_ok=True)
 
-    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{min_bound}_{loss_margin}_{learning_rate}_{transitive}.pt"
+    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{transitive}.pt"
     model = GeometricELModel(evaluator_name, dataset, batch_size,
-                             embed_dim, module_margin, min_bound, loss_margin,
+                             embed_dim, module_margin, loss_margin,
                              learning_rate, model_filepath, epochs,
                              evaluate_every, evaluate_deductive,
                              filter_deductive, transitive, device, wandb_logger)
@@ -133,7 +130,6 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
             
              
     wandb_logger.finish()
-        
 
 def print_as_md(overall_metrics, key=None):
     metrics = ["test_mr", "test_mrr", "test_auc", "test_hits@1", "test_hits@3", "test_hits@10", "test_hits@50", "test_hits@100"]
@@ -193,11 +189,11 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
 
 class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
-                 module_margin, min_bound, loss_margin, learning_rate,
+                 module_margin, loss_margin, learning_rate,
                  model_filepath, epochs, evaluate_every,
                  evaluate_deductive, filter_deductive, transitive,
                  device, wandb_logger):
-        super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath)
+        super().__init__(dataset, embed_dim, batch_size, model_filepath=model_filepath, load_normalized=True)
 
         self.transitive = transitive
 
@@ -216,7 +212,7 @@ class GeometricELModel(EmbeddingELModel):
                                          margin=module_margin,
                                          transitive=transitive,
                                          transitive_ids=self.transitive_ids,
-                                         min_bound = min_bound)
+                                         )
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset, device, evaluate_with_deductive_closure=evaluate_deductive, filter_deductive_closure=filter_deductive)
         self.learning_rate = learning_rate
@@ -296,7 +292,6 @@ class GeometricELModel(EmbeddingELModel):
         curr_tolerance = tolerance
 
         optimizer = th.optim.Adam(self.module.parameters(), lr=self.learning_rate)
-        # criterion = nn.MSELoss()
         criterion = nn.BCELoss()
         best_mrr = 0
         best_mr = float("inf")
@@ -334,10 +329,7 @@ class GeometricELModel(EmbeddingELModel):
                     batch_data, = next(gci_dl)
                     batch_data = batch_data.to(self.device)
 
-                    if gci_name != "gci3":
-                        pos_logits = self.tbox_forward(batch_data, gci_name)
-                    else:
-                        pos_logits, classes_to_fix, dims = self.tbox_forward(batch_data, gci_name)
+                    pos_logits = self.tbox_forward(batch_data, gci_name)
                     pos_logits = 1 - th.exp(-pos_logits)
                     loss += criterion(pos_logits, th.zeros_like(pos_logits))
                     
@@ -348,11 +340,8 @@ class GeometricELModel(EmbeddingELModel):
                         else:
                             neg_batch = th.cat([batch_data[:, :2], neg_idxs.unsqueeze(1)], dim=1)
 
-                        if gci_name != "gci3":
-                            neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
-                        else:
-                            # continue
-                            neg_logits, _, _ = self.tbox_forward(neg_batch, gci_name, neg=True)
+                        neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
+                                                                                
                         neg_logits = 1 - th.exp(-neg_logits)
                         loss += criterion(neg_logits, th.ones_like(neg_logits))
 
@@ -368,7 +357,7 @@ class GeometricELModel(EmbeddingELModel):
                 total_train_loss += loss.item()
                                     
             if epoch % self.evaluate_every == 0:
-                print(self.transitive_ids)
+                # print(self.transitive_ids)
                 valid_metrics = self.evaluator.evaluate(self.module, mode="valid", relations_to_evaluate=self.transitive_ids.tolist())
                 print(valid_metrics)
                 valid_mrr = 0

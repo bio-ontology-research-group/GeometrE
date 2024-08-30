@@ -19,22 +19,13 @@ def check_output_shape(func):
 
 class Box():
     def __init__(self, lower_corner, delta, pos_delta=True):
-        # if delta is not None and upper_corner is not None:
-            # raise ValueError("Cannot define both upper and delta")
-
         self.lower_corner = lower_corner
         
-        # if delta is not None:
         if pos_delta:
             delta = th.abs(delta)
         self.delta = delta
         self.upper_corner = lower_corner + delta
 
-        # if upper_corner is not None:
-            # self.upper_corner = upper_corner
-            # self.delta = th.abs(upper_corner - lower_corner)
-            
-         
     @check_output_shape
     @staticmethod
     def inclusion(box1, box2, margin, *args):
@@ -64,15 +55,10 @@ class Box():
         return Box(intersection_lower_corner, delta, pos_delta=False)
 
     @staticmethod
-    def unbound(box, rel_mask, min_bound):
+    def unbound(box, rel_mask):
         min_bound = -1
         unbound_dimension = th.where(rel_mask == 1)
-        # print(unbound_dimension)
-        # print(unbound_dimension[0].shape, unbound_dimension[1].shape)
-        # print(f"unbound_dimension: {unbound_dimension.shape}")
-        # check = th.sum(unbound_dimension, axis=1)
-        # assert th.all(check == 1), "Rel mask should have only one 1 per row"
-
+                                        
         new_lower_corner = box.lower_corner.clone()
         new_upper_corner = box.upper_corner.clone()
         
@@ -81,39 +67,10 @@ class Box():
         delta[unbound_dimension] = new_upper_corner[unbound_dimension]
         return Box(new_lower_corner, delta)
  
-
-
-            
-    # @check_output_shape
-    # @staticmethod
-    # def inclusion(box1, box2, margin):
-        # """
-        # Positive margin allows the box1 to be partially outside box2
-        # """
-        # euc_distance = th.abs(box1.center - box2.center)
-                
-        # return th.linalg.norm(th.relu(euc_distance + box1.offset - box2.offset - margin), axis=1)
-
-    # @check_output_shape
-    # @staticmethod
-    # def non_inclusion(box1, box2, margin):
-        # euc_distance = th.abs(box1.center - box2.center)
-        # return th.linalg.norm(th.relu(euc_distance + box1.offset - box2.offset - margin), axis=1)
-        
     @check_output_shape
     @staticmethod
     def non_transitive_inclusion(box1, box2, margin, relation):
-        # loss = th.mean(th.relu(box1.center + box1.offset - box2.center - box2.offset), axis=1)
-        # return loss
         return Box.non_inclusion(box1, box2, margin, relation)
-
-    # @staticmethod
-    # def intersection(box1, box2):
-        # lower_corner = th.maximum(box1.center - box1.offset, box2.center - box2.offset)
-        # upper_corner = th.minimum(box1.center + box1.offset, box2.center + box2.offset)
-        # center = (lower_corner + upper_corner) / 2
-        # offset = th.abs(lower_corner - upper_corner) / 2
-        # return Box(center, offset)
 
     def corners_loss(self):
         if self.upper_corner is None or self.lower_corner is None:
@@ -122,23 +79,6 @@ class Box():
         loss = th.linalg.norm(th.relu(self.lower_corner - self.upper_corner), axis=1)
         return loss
         
-
-    # @staticmethod
-    # def unbound(box, rel_mask, min_bound):
-        # min_bound = - abs(min_bound)
-        # unbound_dimension = th.where(rel_mask == 1)
-                                        
-        # new_lower_corner = box.lower_corner.clone()
-        # new_upper_corner = box.upper_corner.clone()
-        
-        # new_lower_corner[unbound_dimension] = min_bound
-
-        # new_center = (new_lower_corner + new_upper_corner) / 2
-        # new_offset = th.abs(new_lower_corner - new_upper_corner) / 2
-        
-        # return Box(new_center, new_offset)
- 
-
 @check_output_shape
 def gci0_loss(data, class_lower, class_delta, margin, neg=False):
     c = class_lower(data[:, 0])
@@ -204,21 +144,6 @@ def gci1_bot_loss(data, class_lower, class_delta, margin, neg=False):
 
     loss = th.linalg.norm(th.relu(intersection_box.upper_corner - intersection_box.lower_corner - margin), axis=1, ord=-float("inf"))
 
-    
-    # box_c = Box(c, off_c)
-    # box_d = Box(d, off_d)
-
-    # c = box_c.center
-    # d = box_d.center
-
-    # off_c = box_c.offset
-    # off_d = box_d.offset
-    
-    # euc = th.abs(c - d)
-    # dst = th.linalg.norm(th.relu(-euc + off_c + off_d - abs(margin)), axis=1) # positive margin forces a minimum distance between c and d
-
-    # loss = th.linalg.norm(th.relu(intersection_box.upper_corner - intersection_box.lower_corner - margin), axis=1, ord=-float("inf"))
-    
     return loss
 
 @check_output_shape
@@ -247,7 +172,7 @@ def normal_gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transi
 
 
 @check_output_shape
-def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, transitive_ids, margin, transitive, neg=False, evaluate=False): #adapted
+def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, transitive, neg=False, evaluate=False): #adapted
 
     if not transitive:
         return normal_gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg = neg)
@@ -273,7 +198,7 @@ def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, tr
     box_c_trans = Box(c_trans, off_c_trans)
     box_d_trans = Box(d_trans - r_trans, off_d_trans)
 
-    box_d_unbounded = Box.unbound(box_d_trans, r_mask, min_bound)
+    box_d_unbounded = Box.unbound(box_d_trans, r_mask)
 
     if neg:
         # unbound_dimension = th.where(r_mask == 1)
@@ -330,11 +255,11 @@ def normal_gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transi
     else:
         loss = Box.inclusion(box_c, box_d, margin)
 
-    return loss, None, None
+    return loss
 
 
  
-def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, transitive_ids, margin, transitive, neg=False):
+def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, transitive, neg=False):
 
     if not transitive:
         return normal_gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_ids, margin, neg)
@@ -356,20 +281,14 @@ def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, tr
     r_trans = th.abs(r_embed * r_mask)
     
     box_c_trans = Box(c_trans - r_trans, off_c_trans)
-    box_c_unbounded = Box.unbound(box_c_trans, r_mask, min_bound)
+    box_c_unbounded = Box.unbound(box_c_trans, r_mask)
 
     box_d_trans = Box(d_trans, off_d_trans)
             
     if neg:
-        # unbound_dimension = th.where(r_mask == 1)
-        # box_c_unbounded.lower_corner[unbound_dimension] = 0
-        # box_d_trans.lower_corner[unbound_dimension] = 0
-
         transitive_loss = Box.non_inclusion(box_c_unbounded, box_d_trans, margin)
     else:
         transitive_loss = Box.inclusion(box_c_unbounded, box_d_trans, margin)
-
-    
 
     c_non_trans = class_lower(non_trans_data[:, 1])
     off_c_non_trans = th.abs(class_delta(non_trans_data[:, 1]))
@@ -392,7 +311,7 @@ def gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, min_bound, tr
     final_output[mask] = transitive_loss
     final_output[~mask] = non_transitive_loss
     
-    return final_output, trans_data[:, 2], th.where(r_mask==1)
+    return final_output
 
 
 @check_output_shape
@@ -424,7 +343,7 @@ def class_assertion_loss(data, class_lower, class_delta, individual_embed, margi
     return loss
 
 @check_output_shape
-def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, min_bound, transitive_ids, margin, transitive, neg=False):
+def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, transitive_ids, margin, transitive, neg=False):
     # logger.debug("All data")
     # logger.debug(data)
     r = data[:, 1]

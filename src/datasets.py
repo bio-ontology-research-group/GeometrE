@@ -25,8 +25,17 @@ class SubsumptionDataset(PathDataset):
             valid_classes = self.validation.getClassesInSignature()
             test_classes = self.testing.getClassesInSignature()
 
-            assert set(valid_classes) - set(train_classes) == set(), f"Valid classes not in train: {set(valid_classes) - set(train_classes)}"
-            assert set(test_classes) - set(train_classes) == set(), f"Test classes not in train: {set(test_classes) - set(train_classes)}"
+            valid_not_in_train = set(valid_classes) - set(train_classes)
+            test_not_in_train = set(test_classes) - set(train_classes)
+            if len(valid_not_in_train) > 0:
+                print(f"Ignoring {len(valid_not_in_train)} classes in validation set that are not in the training set")
+            if len(test_not_in_train) > 0:
+                print(f"Ignoring {len(test_not_in_train)} classes in test set that are not in the training set")
+            
+            not_in_train = valid_not_in_train.union(test_not_in_train)
+
+            # assert set(valid_classes) - set(train_classes) == set(), f"Valid classes not in train: {set(valid_classes) - set(train_classes)}"
+            # assert set(test_classes) - set(train_classes) == set(), f"Test classes not in train: {set(test_classes) - set(train_classes)}"
 
             
             classes = self.ontology.getClassesInSignature()

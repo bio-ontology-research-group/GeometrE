@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 class Evaluator:
     def __init__(self, dataset, device, batch_size=16, evaluate_with_deductive_closure=False, filter_deductive_closure=False):
@@ -455,7 +455,7 @@ class RelationEvaluator(Evaluator):
         eval_tails = self.evaluation_tails.repeat(num_heads).to(heads.device).unsqueeze(1)
         logits_heads = model(th.cat([heads, rels, eval_tails], dim=-1), "gci2")
         logits_heads = logits_heads.view(-1, len(self.evaluation_tails))
-
+        
         # tails = tails.repeat_interleave(len(self.evaluation_heads)).unsqueeze(1)
         # rels = aux_rels.repeat_interleave(len(self.evaluation_heads)).unsqueeze(1)
         # eval_heads = self.evaluation_heads.repeat(num_tails).to(tails.device).unsqueeze(1)
@@ -469,7 +469,7 @@ class RelationEvaluator(Evaluator):
         if not mode in ["valid", "test"]:
             raise ValueError(f"Mode must be either 'valid' or 'test', not {mode}")
 
-        print(f"Relations to evaluate: {relations_to_evaluate}")
+        # print(f"Relations to evaluate: {relations_to_evaluate}")
         # if relations_to_evaluate is None:
             # relations_to_evaluate = range(len(self.dataset.object_properties))
         # elif isinstance(relations_to_evaluate[0], str):

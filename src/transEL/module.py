@@ -8,7 +8,7 @@ from deprecated.sphinx import deprecated
 class TransitiveELModule(ELModule):
     """Implementation of Transitive Box Embeddings from []_.
     """
-    def __init__(self, nb_ont_classes, nb_rels, nb_individuals, transitive, transitive_ids=None, embed_dim=50, margin=0.1, min_bound=5):
+    def __init__(self, nb_ont_classes, nb_rels, nb_individuals, transitive, transitive_ids=None, embed_dim=50, margin=0.1):
         super().__init__()
 
 
@@ -29,9 +29,6 @@ class TransitiveELModule(ELModule):
         self.rel_mask.weight.data.fill_(0)
         self.rel_mask.weight.data[:nb_rels, :nb_rels] = th.eye(nb_rels)
         self.rel_mask.weight.requires_grad = False
-
-        self.min_bound = min_bound
-        
         self.margin = margin
 
 
@@ -42,41 +39,6 @@ class TransitiveELModule(ELModule):
         embeddings.weight.data /= weight_data_normalized
         return embeddings
 
-
-    # def fix_classes(self, ids, dims):
-        
-        # if ids is not None:
-            # centers = self.class_lower(ids)
-            # offsets = th.abs(self.class_delta(ids))
-
-            # lower = centers - offsets
-            # upper = centers + offsets
-
-            # lower[dims] = -self.min_bound
-
-        
-            # new_centers = (upper + lower) / 2
-            # new_offsets = (upper - lower) / 2
-        
-            # self.class_lower.weight.data[ids] = new_centers
-            # self.class_delta.weight.data[ids] = new_offsets
-
-
-        # all_centers = self.class_lower.weight.data
-        # all_offsets = th.abs(self.class_delta.weight.data)
-
-        # all_lower = all_centers - all_offsets
-        # all_upper = all_centers + all_offsets
-        # all_lower = th.max(all_lower, th.full_like(all_lower, -self.min_bound))
-
-        # all_offsets = (all_upper - all_lower) / 2
-        # all_centers = (all_upper + all_lower) / 2
-
-        # self.class_lower.weight.data = all_centers
-        # self.class_delta.weight.data = all_offsets
-        
-        
-    
     def class_assertion_loss(self, data, neg=False):
         return L.class_assertion_loss(data, self.class_lower,
                                       self.class_delta, self.individual_embed, self.margin, neg=neg)
@@ -86,7 +48,6 @@ class TransitiveELModule(ELModule):
                                                 self.individual_embed,
                                                 self.rel_embed,
                                                 self.rel_mask,
-                                                self.min_bound,
                                                 self.transitive_ids,
                                                 self.margin,
                                                 self.transitive,
@@ -110,23 +71,20 @@ class TransitiveELModule(ELModule):
                                self.class_delta,  self.margin, neg=neg)
 
     def gci2_loss(self, data, neg=False):
-        return L.gci2_loss(data, self.class_lower,
-                           self.class_delta,
+        return L.gci2_loss(data, self.class_lower, self.class_delta,
                            self.rel_embed, self.rel_mask,
-                           self.min_bound, self.transitive_ids,
-                           self.margin, self.transitive, neg=neg)
+                           self.transitive_ids, self.margin,
+                           self.transitive, neg=neg)
 
     def gci3_loss(self, data, neg=False):
-        return L.gci3_loss(data, self.class_lower,
-                           self.class_delta,
+        return L.gci3_loss(data, self.class_lower, self.class_delta,
                            self.rel_embed, self.rel_mask,
-                           self.min_bound, self.transitive_ids,
-                           self.margin, self.transitive, neg=neg)
+                           self.transitive_ids, self.margin,
+                           self.transitive, neg=neg)
 
     def gci3_bot_loss(self, data, neg=False):
         return L.gci3_bot_loss(data, self.class_delta, self.margin, neg=neg)
 
 
     def regularization_loss(self, reg_factor=0.1):
-        # return L.regularization_loss(self.rel_embed, self.rel_mask, self.transitive_ids)
         return L.regularization_loss(self.class_lower, reg_factor = reg_factor)
