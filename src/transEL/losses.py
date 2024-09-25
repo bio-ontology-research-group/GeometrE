@@ -56,7 +56,7 @@ class Box():
 
     @staticmethod
     def unbound(box, rel_mask):
-        min_bound = -1
+        min_bound = 0
         unbound_dimension = th.where(rel_mask == 1)
                                         
         new_lower_corner = box.lower_corner.clone()
@@ -97,13 +97,15 @@ def gci0_loss(data, class_lower, class_delta, margin, neg=False):
     return loss
 
 @check_output_shape
-def gci0_bot_loss(data, class_lower, class_delta, margin, neg=False):
+def gci0_bot_loss(data, class_lower, class_delta, margin, max_bound, neg=False):
     lower_c = class_lower(data[:, 0])
     delta_c = class_delta(data[:, 0])
     box_c = Box(lower_c, delta_c, pos_delta = False)
 
-    lower_corner_condition = th.linalg.norm(th.exp(th.ones_like(box_c.lower_corner)) - box_c.lower_corner, axis=1)
-    upper_corner_condition = th.linalg.norm(th.exp(box_c.upper_corner), axis=1)
+    # lower_corner_condition = th.linalg.norm(th.exp(th.ones_like(box_c.lower_corner)) - box_c.lower_corner, axis=1)
+    lower_corner_condition = th.linalg.norm(max_bound * th.ones_like(box_c.lower_corner) - box_c.lower_corner, axis=1)
+    upper_corner_condition = th.linalg.norm(box_c.upper_corner, axis=1)
+    # upper_corner_condition = th.linalg.norm(th.exp(box_c.upper_corner), axis=1)
 
     loss = (lower_corner_condition + upper_corner_condition)/2
     return loss
@@ -154,7 +156,7 @@ def normal_gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transi
     d = class_lower(data[:, 2])
 
     trans_mask = th.isin(data[:, 1], transitive_ids)
-    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
+#    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
 
     off_c = th.abs(class_delta(data[:, 0]))
     off_d = th.abs(class_delta(data[:, 2]))
@@ -201,9 +203,6 @@ def gci2_loss(data, class_lower, class_delta, rel_embed, rel_mask, transitive_id
     box_d_unbounded = Box.unbound(box_d_trans, r_mask)
 
     if neg:
-        # unbound_dimension = th.where(r_mask == 1)
-        # box_c_trans.lower_corner[unbound_dimension] = 0
-        # box_d_unbounded.lower_corner[unbound_dimension] = 0
         transitive_loss = Box.non_inclusion(box_c_trans, box_d_unbounded, margin)
     else:
         transitive_loss = Box.inclusion(box_c_trans, box_d_unbounded, margin)
@@ -242,7 +241,7 @@ def normal_gci3_loss(data, class_lower, class_delta, rel_embed, rel_mask, transi
     d = class_lower(data[:, 2])
 
     trans_mask = th.isin(data[:, 0], transitive_ids)
-    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
+ #   r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
     
     off_c = th.abs(class_delta(data[:, 1]))
     off_d = th.abs(class_delta(data[:, 2]))
@@ -342,45 +341,68 @@ def class_assertion_loss(data, class_lower, class_delta, individual_embed, margi
         
     return loss
 
+
+def normal_object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, transitive_ids, margin, neg=False):
+
+    i1 = individual_embed(data[:, 0])
+    r = rel_embed(data[:, 1])
+    r_mask = rel_mask(data[:, 1])
+    i2 = individual_embed(data[:, 2])
+
+    trans_mask = th.isin(data[:, 1], transitive_ids)
+    r[trans_mask] = th.abs(r[trans_mask] * r_mask[trans_mask])
+
+    off_i1 = th.zeros_like(i1)
+    off_i2 = th.zeros_like(i2)
+
+    box_i1 = Box(i1, off_i1)
+    box_i2 = Box(i2, off_i2)
+
+    if neg:
+        loss = Box.non_inclusion(box_i1, box_i2, margin)
+    else:
+        loss = Box.inclusion(box_i1, box_i2, margin)
+    
 @check_output_shape
 def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, transitive_ids, margin, transitive, neg=False):
-    # logger.debug("All data")
-    # logger.debug(data)
+
+    if not transitive:
+        return normal_object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, transitive_ids, margin, neg=neg)
+    
     r = data[:, 1]
     mask = th.isin(r, transitive_ids)
 
     trans_data = data[mask]
-    logger.debug(trans_data)
     non_trans_data = data[~mask]
 
     i1_trans = individual_embed(trans_data[:, 0])
-    if transitive:
-        r_trans = th.abs(rel_embed(trans_data[:, 1])) #* rel_mask(trans_data[:, 1])
+    
+    r_embed = rel_embed(trans_data[:, 1])
+    r_mask = rel_mask(trans_data[:, 1])
+    r_trans = th.abs(r_embed * r_mask)
+
     i2_trans = individual_embed(trans_data[:, 2])
+
     off_i1_trans = th.zeros_like(i1_trans)
     off_i2_trans = th.zeros_like(off_i1_trans)
 
-    box_c_trans = Box(i1_trans + r_trans, off_i1_trans)
-    box_d_trans = Box(i2_trans, off_i2_trans)
+    box_c_trans = Box(i1_trans, off_i1_trans)
+    box_d_trans = Box(i2_trans - r_trans, off_i2_trans)
 
     if neg:
-        transitive_loss = Box.non_transitive_inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        transitive_loss = Box.non_inclusion(box_c_trans, box_d_trans, r_trans, margin)
     else:
-        transitive_loss = Box.transitive_inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        transitive_loss = Box.inclusion(box_c_trans, box_d_trans, r_trans, margin)
 
 
-    
-    
     i1_non_trans = individual_embed(non_trans_data[:, 0])
     r_non_trans = rel_embed(non_trans_data[:, 1])
-    # logger.debug("\n\nNon transitive data")
-    # logger.debug(non_trans_data)
     i2_non_trans = individual_embed(non_trans_data[:, 2])
     off_i1_non_trans = th.zeros_like(i1_non_trans)
     off_i2_non_trans = th.zeros_like(i2_non_trans)
 
-    box_c_non_trans = Box(i1_non_trans + r_non_trans, off_i1_non_trans)
-    box_d_non_trans = Box(i2_non_trans, off_i2_non_trans)
+    box_c_non_trans = Box(i1_non_trans, off_i1_non_trans)
+    box_d_non_trans = Box(i2_non_trans - r_non_trans, off_i2_non_trans)
 
     if neg:
         non_trans_loss = Box.non_inclusion(box_c_non_trans, box_d_non_trans, margin)
@@ -388,19 +410,17 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
         non_trans_loss = Box.inclusion(box_c_non_trans, box_d_non_trans, margin)
         
     final_output = th.zeros(data.shape[0], device=data.device)
-    # alpha = 0.9
-    # final_output[mask] = alpha * transitive_loss
-    # final_output[~mask] = (1-alpha) * inclusion_loss
     final_output[mask] = transitive_loss
     final_output[~mask] = non_trans_loss
             
     return final_output
 
 
-def regularization_loss(class_lower, reg_factor):
+def regularization_loss(class_lower, class_delta, max_bound, reg_factor):
     lower = class_lower.weight
-    return th.relu(-lower).mean() * reg_factor
-
+    lower_condition =  th.relu(-lower).mean() * reg_factor
+    upper_condition = th.relu(lower + th.abs(class_delta.weight) - max_bound).mean() * reg_factor
+    return lower_condition + upper_condition
 
 # def regularization_loss(rel_embed, rel_mask, transitive_ids, reg_factor=0.1):
     # r = th.abs(rel_embed(transitive_ids)) * rel_mask(transitive_ids)
