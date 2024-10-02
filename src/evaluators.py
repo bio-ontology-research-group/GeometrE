@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 class Evaluator:
     def __init__(self, dataset, device, batch_size=16, evaluate_with_deductive_closure=False, filter_deductive_closure=False):
@@ -32,6 +32,7 @@ class Evaluator:
         self.filter_deductive_closure = filter_deductive_closure
         
         self.class_to_id = {c: i for i, c in enumerate(self.dataset.classes.as_str)}
+        print(f"Number of classes: {len(self.class_to_id)}")
         self.id_to_class = {i: c for c, i in self.class_to_id.items()}
 
         self.relation_to_id = {r: i for i, r in enumerate(self.dataset.object_properties.as_str)}
@@ -699,6 +700,303 @@ class RelationEvaluator(Evaluator):
         # metrics["superproperties"] = self.evaluate(model, relations_to_evaluate=superproperties, mode="test")
         # metrics["inverse_properties"] = self.evaluate(model, relations_to_evaluate=inverse_properties, mode="test")
         metrics["transitive_properties"] = self.evaluate(model, relations_to_evaluate=transitive_properties, mode="test")
+
+        return metrics
+
+
+
+class RelationKGEvaluator(Evaluator):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_relation_properties(self):
+        roles = self.dataset.ontology.getObjectPropertiesInSignature()
+        rbox_axioms = self.dataset.ontology.getRBoxAxioms(Imports.fromBoolean(True))
+        transitive_roles = []
+        
+        for axiom in rbox_axioms:
+            axiom_type = axiom.getAxiomType()
+            if axiom_type == Ax.TRANSITIVE_OBJECT_PROPERTY:
+                property_ = axiom.getProperty()
+                transitive_roles.append(str(property_.toStringID()))
+                         
+        return roles, transitive_roles
+
+        
+    def create_tuples(self, ontology):
+        projector = TaxonomyWithRelationsProjector(relations=self.dataset.object_properties.as_str)
+        edges = projector.project(ontology)
+
+        classes, relations = Edge.get_entities_and_relations(edges)
+
+        class_str2owl = self.dataset.classes.to_dict()
+        class_owl2idx = self.dataset.classes.to_index_dict()
+
+        rel_str2owl = self.dataset.object_properties.to_dict()
+        rel_owl2idx = self.dataset.object_properties.to_index_dict()
+        
+        edges_indexed = []
+        
+        for e in edges:
+            head = class_owl2idx[class_str2owl[e.src]]
+            rel = rel_owl2idx[rel_str2owl[e.rel]]
+            tail = class_owl2idx[class_str2owl[e.dst]]
+            edges_indexed.append((head, rel, tail))
+        
+        return th.tensor(edges_indexed, dtype=th.long)
+        
+
+
+    def get_filtering_labels(self, num_heads, num_tails, relation_id=-1):
+
+        filtering_tuples = th.cat([self.train_tuples, self.valid_tuples], dim=0)
+        filtering_tuples = filtering_tuples[filtering_tuples[:, 1] == relation_id]
+                
+        filtering_labels = th.ones((num_heads, num_tails), dtype=th.float)
+
+        for head, rel, tail in filtering_tuples:
+            filtering_labels[head, tail] = 10000
+
+        number_of_filtered_values = th.sum(filtering_labels == 10000)
+        return filtering_labels
+
+    def get_deductive_labels(self, num_heads, num_tails, relation_id=-1):
+        deductive_labels = th.ones((num_heads, num_tails), dtype=th.float)
+
+        deductive_tuples = self.deductive_closure_tuples[self.deductive_closure_tuples[:, 1] == relation_id]
+        
+        for head, rel, tail in self.deductive_closure_tuples:
+             deductive_labels[head, tail] = 10000
+        
+        return deductive_labels
+
+    def get_logits(self, model, batch, relation_id=-1):
+        heads, rels, tails = batch[:, 0], batch[:, 1], batch[:, 2]
+        num_heads, num_tails = len(heads), len(tails)
+        aux_rels = rels.clone()
+        
+        heads = heads.repeat_interleave(len(self.evaluation_tails)).unsqueeze(1)
+        rels = aux_rels.repeat_interleave(len(self.evaluation_tails)).unsqueeze(1)
+        eval_tails = self.evaluation_tails.repeat(num_heads).to(heads.device).unsqueeze(1)
+        logits_heads = model(th.cat([heads, rels, eval_tails], dim=-1), "gci2")
+        logits_heads = logits_heads.view(-1, len(self.evaluation_tails))
+        
+        tails = tails.repeat_interleave(len(self.evaluation_heads)).unsqueeze(1)
+        rels = aux_rels.repeat_interleave(len(self.evaluation_heads)).unsqueeze(1)
+        eval_heads = self.evaluation_heads.repeat(num_tails).to(tails.device).unsqueeze(1)
+        logits_tails = model(th.cat([eval_heads, rels, tails], dim=-1), "gci2")
+        logits_tails = logits_tails.view(-1, len(self.evaluation_heads))
+
+        return logits_heads, logits_tails
+
+    def evaluate_overall(self, model, mode="test", relations_to_evaluate=None):
+        model.eval()
+        if not mode in ["valid", "test"]:
+            raise ValueError(f"Mode must be either 'valid' or 'test', not {mode}")
+
+        if relations_to_evaluate is None:
+            relations_to_evaluate = range(len(self.dataset.object_properties))
+                    
+        results = dict()
+
+        if mode == "valid":
+            eval_tuples = self.valid_tuples
+        elif mode == "test":
+            eval_tuples = self.test_tuples
+
+            if self.evaluate_with_deductive_closure:
+                deductive_tuples = self.deductive_closure_tuples
+                train_tuples = self.train_tuples
+                valid_tuples = self.valid_tuples
+                mask1 = (deductive_tuples.unsqueeze(1) == train_tuples).all(dim=-1).any(dim=-1)
+                mask2 = (deductive_tuples.unsqueeze(1) == valid_tuples).all(dim=-1).any(dim=-1)
+                mask = mask1 | mask2
+                deductive_closure_tuples = deductive_tuples[~mask]
+                eval_tuples = deductive_tuples
+
+        logger.debug(f"Shape of eval_tuples: {eval_tuples.shape}")
+
+        all_ranks, all_franks = dict(), dict()
+        num_eval_tuples = 0
+        for rel in relations_to_evaluate:
+            rel_str = self.id_to_relation[rel]
+            logger.debug(f"Evaluating relation {rel_str}. Id: {rel}")
+            logger.debug(f"Shape of eval_tuples: {eval_tuples.shape}")
+            mask = eval_tuples[:, 1] == rel
+            rel_eval_tuples = eval_tuples[mask]
+            num_eval_tuples += 2*len(rel_eval_tuples)
+            if len(rel_eval_tuples) == 0:
+                logger.debug(f"No evaluation tuples for relation {rel_str}. Skipping...")
+                continue
+            ranks, franks = self.evaluate_base_return_ranks(model, rel_eval_tuples, mode=mode, relation_id=rel)
+
+            for rank, count in ranks.items():
+                if not rank in all_ranks:
+                    all_ranks[rank] = 0
+                all_ranks[rank] += count
+
+            for frank, count in franks.items():
+                if not frank in all_franks:
+                    all_franks[frank] = 0
+                all_franks[frank] += count
+
+        num_test_points = sum(all_ranks.values())
+        assert num_eval_tuples == num_test_points, f"num_eval_tuples: {num_eval_tuples} does not match num_test_points: {num_test_points}"
+        mr, fmr = 0, 0
+        mrr, fmrr = 0, 0
+        hits_k = dict({"1": 0, "3": 0, "10": 0, "50": 0, "100": 0})
+        f_hits_k = dict({"1": 0, "3": 0, "10": 0, "50": 0, "100": 0})
+
+        for rank, count in all_ranks.items():
+            mr += rank * count
+            mrr += (1/rank) * count
+            for k, v in hits_k.items():
+                if rank <= int(k):
+                    hits_k[k] += count
+
+        for frank, count in all_franks.items():
+            fmr += frank * count
+            fmrr += (1/frank) * count
+            for k, v in f_hits_k.items():
+                if frank <= int(k):
+                    f_hits_k[k] += count
+
+
+        auc = compute_rank_roc(all_ranks, len(self.evaluation_tails))
+        fauc = compute_rank_roc(all_franks, len(self.evaluation_tails))
+
+        metrics = dict()
+        metrics["mr"] = mr/num_test_points
+        metrics["mrr"] = mrr/num_test_points
+        for k, v in hits_k.items():
+            metrics[f"hits@{k}"] = v/num_test_points
+        metrics["auc"] = auc
+
+        metrics["f_mr"] = fmr/num_test_points
+        metrics["f_mrr"] = fmrr/num_test_points
+        for k, v in f_hits_k.items():
+            metrics[f"f_hits@{k}"] = v/num_test_points
+        metrics["f_auc"] = fauc
+
+        metrics = {f"{mode}_{k}": v for k, v in metrics.items()}
+        return metrics
+                                                                                                            
+    def evaluate_base_return_ranks(self, model, eval_tuples, mode="test", relation_id = -1, **kwargs):
+        num_heads, num_tails = len(self.evaluation_heads), len(self.evaluation_tails)
+        model.eval()
+        if not mode in ["valid", "test"]:
+            raise ValueError(f"Mode must be either 'valid' or 'test', not {mode}")
+
+
+        dataloader = FastTensorDataLoader(eval_tuples, batch_size=self.batch_size, shuffle=False)
+        
+        metrics = dict()
+        ranks, franks = dict(), dict()
+
+        if mode == "test":
+            filtering_labels = self.get_filtering_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
+            if self.evaluate_with_deductive_closure:
+                deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
+            
+        with th.no_grad():
+            for batch, in tqdm(dataloader):
+                if batch.shape[1] == 2:
+                    heads, tails = batch[:, 0], batch[:, 1]
+                elif batch.shape[1] == 3:
+                    heads, tails = batch[:, 0], batch[:, 2]
+                else:
+                    raise ValueError("Batch shape must be either (n, 2) or (n, 3)")
+                aux_heads = heads.clone()
+                aux_tails = tails.clone()
+        
+                batch = batch.to(self.device)
+                logits_heads, logits_tails = self.get_logits(model, batch, *kwargs)
+    
+                for i, head in enumerate(aux_heads):
+                    tail = tails[i]
+                    # print(len(self.evaluation_tails), tail)
+                    tail = th.where(self.evaluation_tails == tail)[0].item()
+                    preds = logits_heads[i]
+
+                    if self.evaluate_with_deductive_closure:
+                        ded_labels = deductive_labels[head].to(preds.device)
+                        ded_labels[tail] = 1
+                        preds = preds * ded_labels
+
+                    
+                    order = th.argsort(preds, descending=False)
+                    rank = th.where(order == tail)[0].item() + 1
+                                        
+                    if mode == "test":
+                        filtering = filtering_labels[head].to(preds.device)
+                        # f_preds = preds * filtering_labels[head].to(preds.device)
+
+                        if self.evaluate_with_deductive_closure:
+                            ded_labels = deductive_labels[head].to(preds.device)
+                            all_filtering = th.max(filtering, ded_labels)
+                            
+                        else:
+                            all_filtering = filtering
+                        all_filtering[tail] = 1
+                        f_preds = preds * all_filtering
+
+                        f_order = th.argsort(f_preds, descending=False)
+                        f_rank = th.where(f_order == tail)[0].item() + 1
+                        assert f_rank <= rank, f"Rank: {rank}, F-Rank: {f_rank}"
+                    
+                                                                
+                    
+                    if rank not in ranks:
+                        ranks[rank] = 0
+                    ranks[rank] += 1
+
+                    if mode == "test":
+                        if f_rank not in franks:
+                            franks[f_rank] = 0
+                        franks[f_rank] += 1
+
+                for i, tail in enumerate(aux_tails):
+                    head = aux_heads[i]
+                    head = th.where(self.evaluation_heads == head)[0].item()
+                    preds = logits_tails[i]
+
+                    if self.evaluate_with_deductive_closure:
+                        ded_labels = deductive_labels[:, tail].to(preds.device)
+                        ded_labels[head] = 1
+                        preds = preds * ded_labels
+                    
+                    order = th.argsort(preds, descending=False)
+                    rank = th.where(order == head)[0].item() + 1
+
+                    if mode == "test":
+                        f_preds = preds * filtering_labels[:, tail].to(preds.device)
+
+                        if self.evaluate_with_deductive_closure:
+                            ded_labels = deductive_labels[:, tail].to(preds.device)
+                            ded_labels[head] = 1
+                            f_preds = f_preds * ded_labels
+
+                        
+                        f_order = th.argsort(f_preds, descending=False)
+                        f_rank = th.where(f_order == head)[0].item() + 1
+
+
+                    if rank not in ranks:
+                        ranks[rank] = 0
+                    ranks[rank] += 1
+                        
+                    if mode == "test":
+                                
+                        if f_rank not in franks:
+                            franks[f_rank] = 0
+                        franks[f_rank] += 1
+                                
+                                                
+        return ranks, franks
+
+    def evaluate_by_property(self, model, transitive_properties):
+        model.eval()
+        metrics = self.evaluate_overall(model, relations_to_evaluate=transitive_properties, mode="test")
 
         return metrics
 

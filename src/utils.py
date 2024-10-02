@@ -4,7 +4,7 @@ import os
 import numpy as np
 from itertools import chain, combinations, product
 
-from org.semanticweb.owlapi.model import AxiomType as ax
+
 
 
 def powerset(iterable):
@@ -40,27 +40,6 @@ def seed_everything(seed=42):
     th.cuda.manual_seed_all(seed)
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
-
-
-
-IGNORED_AXIOM_TYPES = [ax.ANNOTATION_ASSERTION,
-                       ax.ASYMMETRIC_OBJECT_PROPERTY,
-                       ax.DECLARATION,
-                       ax.EQUIVALENT_OBJECT_PROPERTIES,
-                       ax.FUNCTIONAL_OBJECT_PROPERTY,
-                       ax.INVERSE_FUNCTIONAL_OBJECT_PROPERTY,
-                       ax.INVERSE_OBJECT_PROPERTIES,
-                       ax.IRREFLEXIVE_OBJECT_PROPERTY,
-                       ax.OBJECT_PROPERTY_DOMAIN,
-                       ax.OBJECT_PROPERTY_RANGE,
-                       ax.REFLEXIVE_OBJECT_PROPERTY,
-                       ax.SUB_PROPERTY_CHAIN_OF,
-                       ax.SUB_ANNOTATION_PROPERTY_OF,
-                       ax.SUB_OBJECT_PROPERTY,
-                       ax.SWRL_RULE,
-                       ax.SYMMETRIC_OBJECT_PROPERTY,
-                       ax.TRANSITIVE_OBJECT_PROPERTY
-                       ]
 
 class FastTensorDataLoader:
     """
@@ -121,4 +100,44 @@ class FastTensorDataLoader:
     def __len__(self):
         return self.n_batches
 
+def print_as_md(overall_metrics, key=None):
+    metrics = ["test_mr", "test_mrr", "test_hits@1", "test_hits@3", "test_hits@10", "test_hits@50", "test_hits@100", "test_auc"]
+    filt_metrics = [k.replace("_", "_f_") for k in metrics]
 
+    string_metrics = "| Property | MR | MRR | Hits@1 | Hits@3 | Hits@10 | Hits@50 | Hits@100 | AUC | \n"
+    string_metrics += "| --- | --- | --- | --- | --- | --- | --- | --- | --- | \n"
+    string_filtered_metrics = "| Property | MR | MRR | Hits@1 | Hits@3 | Hits@10 | Hits@50 | Hits@100 | AUC | \n"
+    string_filtered_metrics += "| --- | --- | --- | --- | --- | --- | --- | --- | --- | \n"
+
+    if key is not None:
+        string_metrics += f"| {key} | "
+        string_filtered_metrics += f"| {key} | "
+
+    else:
+        string_metrics += "| Overall | "
+        string_filtered_metrics += "| Overall | "
+
+    
+    for metric in metrics:
+        if metric == "test_mr":
+            string_metrics += f"{int(overall_metrics[metric])} | "
+        else:
+            string_metrics += f"{overall_metrics[metric]:.4f} | "
+    for metric in filt_metrics:
+        if metric == "test_f_mr":
+            string_filtered_metrics += f"{int(overall_metrics[metric])} | "
+        else:
+            string_filtered_metrics += f"{overall_metrics[metric]:.4f} | "
+
+
+    print(string_metrics)
+    print("\n\n")
+    print(string_filtered_metrics)
+        
+    
+
+
+    
+transitive_roles = {"wn18rr": ["_hypernym", "_has_part"]
+                    
+             }

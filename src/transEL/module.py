@@ -20,6 +20,7 @@ class TransitiveELModule(ELModule):
         self.max_bound = max_bound
         
         self.class_lower = self.init_embeddings(nb_ont_classes, embed_dim, a = 0, b = max_bound)
+        # self.class_lower = self.init_embeddings(nb_ont_classes, embed_dim)
         self.class_delta = self.init_embeddings(nb_ont_classes, embed_dim)
         self.individual_embed = self.init_embeddings(nb_individuals, embed_dim)
 
