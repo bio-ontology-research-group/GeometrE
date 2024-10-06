@@ -153,7 +153,7 @@ class GeometricELModel(EmbeddingELModel):
                                          )
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset,
-                                            device, batch_size = 64,
+                                            device, batch_size = 32,
                                             evaluate_with_deductive_closure=evaluate_deductive)
         self.learning_rate = learning_rate
         self.epochs = epochs
