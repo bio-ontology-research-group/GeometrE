@@ -282,7 +282,7 @@ class GeometricELModel(EmbeddingELModel):
                 logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f}  - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
 
     def test(self):
-        self.module.load_state_dict(th.load(self.model_filepath))
+        self.module.load_state_dict(th.load(self.model_filepath, map_location=self.device))
         self.module.to(self.device)
         self.module.eval()
         

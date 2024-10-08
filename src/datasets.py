@@ -25,7 +25,7 @@ class SubsumptionDataset(PathDataset):
             train_classes = self.ontology.getClassesInSignature()
             valid_classes = self.validation.getClassesInSignature()
             test_classes = self.testing.getClassesInSignature()
-
+            
             valid_not_in_train = set(valid_classes) - set(train_classes)
             test_not_in_train = set(test_classes) - set(train_classes)
             if len(valid_not_in_train) > 0:
@@ -72,7 +72,8 @@ class KGDataset(PathDataset):
     @property
     def deductive_closure_ontology(self):
         if self._deductive_closure_ontology is None:
-            self._deductive_closure_ontology = PathDataset(self.root_dir + "train_deductive_closure.owl").ontology
+            # self._deductive_closure_ontology = PathDataset(self.root_dir + "train_deductive_closure.owl").ontology
+            self._deductive_closure_ontology = PathDataset(self.root_dir + "test_trans_only.owl").ontology
 
         return self._deductive_closure_ontology
 
@@ -83,6 +84,8 @@ class KGDataset(PathDataset):
             train_classes = self.ontology.getClassesInSignature()
             valid_classes = self.validation.getClassesInSignature()
             test_classes = self.testing.getClassesInSignature()
+            ded_classes = self.deductive_closure_ontology.getClassesInSignature()
+            
 
             valid_not_in_train = set(valid_classes) - set(train_classes)
             test_not_in_train = set(test_classes) - set(train_classes)
@@ -99,6 +102,10 @@ class KGDataset(PathDataset):
             
             classes = self.classes #ontology.getClassesInSignature()
 
+            ded_classes = self.deductive_closure_ontology.getClassesInSignature()
+            classes = set(classes) | set(ded_classes)
+
+            
             bot_in_classes = False
             top_in_classes = False
 
