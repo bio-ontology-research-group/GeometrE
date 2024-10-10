@@ -899,7 +899,7 @@ class RelationKGEvaluator(Evaluator):
                 deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
             
         with th.no_grad():
-            for batch, in tqdm(dataloader):
+            for batch, in dataloader: #tqdm(dataloader):
                 if batch.shape[1] == 2:
                     heads, tails = batch[:, 0], batch[:, 1]
                 elif batch.shape[1] == 3:
@@ -914,12 +914,15 @@ class RelationKGEvaluator(Evaluator):
     
                 for i, head in enumerate(aux_heads):
                     tail = tails[i]
+
+                    perm = th.randperm(num_tails)
+                    tail = th.where(self.evaluation_tails[perm] == tail)[0].item()
                     # print(len(self.evaluation_tails), tail)
-                    tail = th.where(self.evaluation_tails == tail)[0].item()
-                    preds = logits_heads[i]
+                    # tail = th.where(self.evaluation_tails == tail)[0].item()
+                    preds = logits_heads[i][perm]
 
                     if self.evaluate_with_deductive_closure:
-                        ded_labels = deductive_labels[head].to(preds.device)
+                        ded_labels = deductive_labels[head][perm].to(preds.device)
                         ded_labels[tail] = 1
                         preds = preds * ded_labels
 
@@ -928,11 +931,11 @@ class RelationKGEvaluator(Evaluator):
                     rank = th.where(order == tail)[0].item() + 1
                                         
                     if mode == "test":
-                        filtering = filtering_labels[head].to(preds.device)
+                        filtering = filtering_labels[head][perm].to(preds.device)
                         # f_preds = preds * filtering_labels[head].to(preds.device)
 
                         if self.evaluate_with_deductive_closure:
-                            ded_labels = deductive_labels[head].to(preds.device)
+                            ded_labels = deductive_labels[head][perm].to(preds.device)
                             all_filtering = th.max(filtering, ded_labels)
                             
                         else:
@@ -957,11 +960,12 @@ class RelationKGEvaluator(Evaluator):
 
                 for i, tail in enumerate(aux_tails):
                     head = aux_heads[i]
-                    head = th.where(self.evaluation_heads == head)[0].item()
-                    preds = logits_tails[i]
+                    perm = th.randperm(num_heads)
+                    head = th.where(self.evaluation_heads[perm] == head)[0].item()
+                    preds = logits_tails[i][perm]
 
                     if self.evaluate_with_deductive_closure:
-                        ded_labels = deductive_labels[:, tail].to(preds.device)
+                        ded_labels = deductive_labels[:, tail][perm].to(preds.device)
                         ded_labels[head] = 1
                         preds = preds * ded_labels
                     
@@ -969,17 +973,22 @@ class RelationKGEvaluator(Evaluator):
                     rank = th.where(order == head)[0].item() + 1
 
                     if mode == "test":
-                        f_preds = preds * filtering_labels[:, tail].to(preds.device)
+                        filtering = filtering_labels[:, tail][perm].to(preds.device)
+                        # f_preds = preds * filtering_labels[head].to(preds.device)
 
                         if self.evaluate_with_deductive_closure:
-                            ded_labels = deductive_labels[:, tail].to(preds.device)
-                            ded_labels[head] = 1
-                            f_preds = f_preds * ded_labels
+                            ded_labels = deductive_labels[:, tail][perm].to(preds.device)
+                            all_filtering = th.max(filtering, ded_labels)
+                            
+                        else:
+                            all_filtering = filtering
+                        all_filtering[head] = 1
+                        f_preds = preds * all_filtering
 
-                        
                         f_order = th.argsort(f_preds, descending=False)
                         f_rank = th.where(f_order == head)[0].item() + 1
-
+                        assert f_rank <= rank, f"Rank: {rank}, F-Rank: {f_rank}"
+                    
 
                     if rank not in ranks:
                         ranks[rank] = 0
