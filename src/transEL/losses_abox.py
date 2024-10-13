@@ -56,7 +56,58 @@ class Box():
     def point_distance(box1, box2):
         return (box1.lower_corner - box2.lower_corner).pow(2).sum(dim=1)
 
-    
+
+    @check_output_shape
+    def point_to_segment_distance(box1, box2):
+        """
+        Computes the distance from a batch of points P to a batch of line segments AB in n-dimensional space.
+
+        Parameters:
+        P (torch.Tensor): Tensor of shape (b, n) representing the batch of points, where b is batch size and n is dimensions.
+        A (torch.Tensor): Tensor of shape (b, n) representing the first endpoints of the line segments.
+        B (torch.Tensor): Tensor of shape (b, n) representing the second endpoints of the line segments.
+
+        Returns:
+        torch.Tensor: Tensor of shape (b,) representing distances from each point to the corresponding line segment.
+        """
+        P = box1.lower_corner
+        A = box2.lower_corner
+        B = box2.upper_corner
+        
+        # Vector from A to B for each batch
+        AB = B - A  # shape (b, n)
+        # Vector from A to P for each batch
+        AP = P - A  # shape (b, n)
+        # Vector from B to P for each batch
+        BP = P - B  # shape (b, n)
+
+        # Squared length of segment AB for each batch
+        AB_squared = th.sum(AB * AB, dim=1)  # shape (b,)
+
+        # To avoid division by zero in case A and B are the same, we add a small epsilon.
+        epsilon = 1e-7
+        AB_squared = th.where(AB_squared == 0, th.tensor(epsilon, dtype=AB_squared.dtype), AB_squared)
+
+        # Projection of AP onto AB, normalized by the length of AB (batch version)
+        t = th.sum(AP * AB, dim=1) / AB_squared  # shape (b,)
+
+        # Case 1: t < 0, the closest point is A
+        distance_A = th.norm(AP, dim=1)  # shape (b,)
+
+        # Case 2: t > 1, the closest point is B
+        distance_B = th.norm(BP, dim=1)  # shape (b,)
+
+        # Case 3: 0 <= t <= 1, the closest point is on the segment, compute perpendicular distance
+        t_clamped = th.clamp(t, 0.0, 1.0).unsqueeze(1)  # shape (b, 1) to match (b, n)
+        projection = A + t_clamped * AB  # shape (b, n)
+        distance_perpendicular = th.norm(P - projection, dim=1)  # shape (b,)
+
+        # Combine the distances based on the value of t
+        distances = th.where(t < 0.0, distance_A, th.where(t > 1.0, distance_B, distance_perpendicular))  # shape (b,)
+
+        return distances
+
+     
     @check_output_shape
     @staticmethod
     def non_inclusion(box1, box2, margin, *args):
@@ -190,10 +241,11 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
     box_d_trans = Box(i2_trans - r_trans, off_i2_trans)
 
     if neg:
-        transitive_loss = Box.non_inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        # transitive_loss = Box.non_inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        transitive_loss = Box.point_to_segment_distance(box_c_trans, box_d_trans)
     else:
-        transitive_loss = Box.inclusion(box_c_trans, box_d_trans, r_trans, margin)
-
+        # transitive_loss = Box.inclusion(box_c_trans, box_d_trans, r_trans, margin)
+        transitive_loss = Box.point_to_segment_distance(box_c_trans, box_d_trans)
 
     i1_non_trans = individual_embed(non_trans_data[:, 0])
     r_non_trans = rel_embed(non_trans_data[:, 1])

@@ -756,7 +756,10 @@ class RelationKGEvaluator(Evaluator):
 
         for head, rel, tail in filtering_tuples:
             filtering_labels[head, tail] = 10000
-
+            filtering_labels[head, head] = 10000
+            filtering_labels[tail, tail] = 10000
+        
+            
         number_of_filtered_values = th.sum(filtering_labels == 10000)
         return filtering_labels
 
@@ -767,7 +770,9 @@ class RelationKGEvaluator(Evaluator):
         
         for head, rel, tail in self.deductive_closure_tuples:
              deductive_labels[head, tail] = 10000
-        
+             deductive_labels[head, head] = 10000
+             deductive_labels[tail, tail] = 10000
+             
         return deductive_labels
 
     def get_logits(self, model, batch, relation_id=-1):
@@ -917,13 +922,16 @@ class RelationKGEvaluator(Evaluator):
 
                     perm = th.randperm(num_tails)
                     tail = th.where(self.evaluation_tails[perm] == tail)[0].item()
+                    head_perm = th.where(self.evaluation_heads[perm] == head)[0].item()
                     # print(len(self.evaluation_tails), tail)
                     # tail = th.where(self.evaluation_tails == tail)[0].item()
                     preds = logits_heads[i][perm]
-
+                    preds[head_perm] = 10000
+                    
                     if self.evaluate_with_deductive_closure:
                         ded_labels = deductive_labels[head][perm].to(preds.device)
                         ded_labels[tail] = 1
+                        ded_labels[head_perm] = 1
                         preds = preds * ded_labels
 
                     
@@ -932,8 +940,7 @@ class RelationKGEvaluator(Evaluator):
                                         
                     if mode == "test":
                         filtering = filtering_labels[head][perm].to(preds.device)
-                        # f_preds = preds * filtering_labels[head].to(preds.device)
-
+                        
                         if self.evaluate_with_deductive_closure:
                             ded_labels = deductive_labels[head][perm].to(preds.device)
                             all_filtering = th.max(filtering, ded_labels)
@@ -941,6 +948,7 @@ class RelationKGEvaluator(Evaluator):
                         else:
                             all_filtering = filtering
                         all_filtering[tail] = 1
+                        all_filtering[head_perm] = 1
                         f_preds = preds * all_filtering
 
                         f_order = th.argsort(f_preds, descending=False)
@@ -962,11 +970,14 @@ class RelationKGEvaluator(Evaluator):
                     head = aux_heads[i]
                     perm = th.randperm(num_heads)
                     head = th.where(self.evaluation_heads[perm] == head)[0].item()
+                    tail_perm = th.where(self.evaluation_tails[perm] == tail)[0].item()
                     preds = logits_tails[i][perm]
-
+                    preds[tail_perm] = 10000
+                    
                     if self.evaluate_with_deductive_closure:
                         ded_labels = deductive_labels[:, tail][perm].to(preds.device)
                         ded_labels[head] = 1
+                        ded_labels[tail_perm] = 1
                         preds = preds * ded_labels
                     
                     order = th.argsort(preds, descending=False)
@@ -983,6 +994,7 @@ class RelationKGEvaluator(Evaluator):
                         else:
                             all_filtering = filtering
                         all_filtering[head] = 1
+                        all_filtering[tail_perm] = 1
                         f_preds = preds * all_filtering
 
                         f_order = th.argsort(f_preds, descending=False)
