@@ -256,7 +256,7 @@ class GeometricELModel(EmbeddingELModel):
                 loss += - criterion_bpr(neg_logits - self.loss_margin).mean()
                 # loss += th.relu(self.loss_margin + pos_logits - neg_logits)
 
-                # loss = loss.mean()
+                loss = loss.mean()
                 
                 # for i in range(self.num_negs):
                     # neg_idxs = th.randint(0, num_classes, (len(batch_data),2), device=self.device)

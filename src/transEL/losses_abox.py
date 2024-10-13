@@ -25,6 +25,7 @@ class Box():
             delta = th.abs(delta)
         self.delta = delta
         self.upper_corner = lower_corner + delta
+        self.center = (self.upper_corner + self.lower_corner) / 2
 
     def volume(self):
         if self.upper_corner is None or self.lower_corner is None:
@@ -44,16 +45,24 @@ class Box():
 
         # print(f"min_diff_1: {min_diff_1}, max_diff_1: {max_diff_1}")
         # print(f"min_diff_2: {min_diff_2}, max_diff_2: {max_diff_2}")
-        
-        lower_corner_condition = th.relu(box2.lower_corner - box1.lower_corner - margin)
-        upper_corner_condition = th.relu(box1.upper_corner - box2.upper_corner - margin)
 
+        # euc_dist = th.abs(box1.center - box2.center)
+        # loss = th.nn.functional.softplus(euc_dist + box1.delta/2 - box2.delta/2 - margin)
+        # loss = th.relu(euc_dist + box1.delta/2 - box2.delta/2 - margin)
+        # return loss.sum(dim=1)
+    
+        
+        lower_corner_condition = th.nn.functional.softplus(box2.lower_corner - box1.lower_corner - margin)
+        upper_corner_condition = th.nn.functional.softplus(box1.upper_corner - box2.upper_corner - margin)
+
+        # return th.norm(lower_corner_condition, p=2, dim=1) + th.norm(upper_corner_condition, p=2, dim=1)
         return lower_corner_condition.pow(2).sum(dim=1) + upper_corner_condition.pow(2).sum(dim=1)
         # return th.linalg.norm(lower_corner_condition, axis=1) + th.linalg.norm(upper_corner_condition, axis=1)
 
 
     @check_output_shape
     def point_distance(box1, box2):
+        # return th.norm(box1.lower_corner - box2.lower_corner, p=2, dim=1)
         return (box1.lower_corner - box2.lower_corner).pow(2).sum(dim=1)
 
 
