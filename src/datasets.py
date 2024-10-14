@@ -72,8 +72,8 @@ class KGDataset(PathDataset):
     @property
     def deductive_closure_ontology(self):
         if self._deductive_closure_ontology is None:
-            # self._deductive_closure_ontology = PathDataset(self.root_dir + "train_deductive_closure.owl").ontology
-            self._deductive_closure_ontology = PathDataset(self.root_dir + "test_trans_only.owl").ontology
+            self._deductive_closure_ontology = PathDataset(self.root_dir + "train_deductive_closure.owl").ontology
+            # self._deductive_closure_ontology = PathDataset(self.root_dir + "test_trans_only.owl").ontology
 
         return self._deductive_closure_ontology
 
