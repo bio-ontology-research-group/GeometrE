@@ -900,8 +900,8 @@ class RelationKGEvaluator(Evaluator):
 
         if mode == "test":
             filtering_labels = self.get_filtering_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
-            if self.evaluate_with_deductive_closure:
-                deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
+            # if self.evaluate_with_deductive_closure:
+            deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
             
         with th.no_grad():
             for batch, in dataloader: #tqdm(dataloader):
@@ -946,6 +946,9 @@ class RelationKGEvaluator(Evaluator):
                             all_filtering = th.max(filtering, ded_labels)
                             
                         else:
+                            # ded_labels = deductive_labels[head][perm].to(preds.device)
+                            # all_filtering = th.max(filtering, ded_labels)
+                            
                             all_filtering = filtering
                         all_filtering[tail] = 1
                         all_filtering[head_perm] = 1
@@ -992,6 +995,9 @@ class RelationKGEvaluator(Evaluator):
                             all_filtering = th.max(filtering, ded_labels)
                             
                         else:
+                            # ded_labels = deductive_labels[:, tail][perm].to(preds.device)
+                            # all_filtering = th.max(filtering, ded_labels)
+                        
                             all_filtering = filtering
                         all_filtering[head] = 1
                         all_filtering[tail_perm] = 1

@@ -38,6 +38,7 @@ class TransitiveELModule(ELModule):
         
         self.rel_mask = nn.Embedding(nb_rels, embed_dim)
         self.rel_mask.weight.data.fill_(0)
+        # self.rel_mask.weight.data[self.transitive_ids] = 0
 
         column_index = th.arange(len(transitive_ids))
         self.rel_mask.weight.data[self.transitive_ids, column_index] = 1
@@ -101,4 +102,6 @@ class TransitiveELModule(ELModule):
 
 
     def regularization_loss(self, reg_factor=0.1):
-        return L.regularization_loss(self.class_lower, self.max_bound, reg_factor = reg_factor)
+        inds_reg =  L.regularization_loss(self.class_lower, self.max_bound, reg_factor = reg_factor)
+        rel_reg = L.rel_regularization_loss(self.rel_embed, self.rel_mask, self.transitive_ids, self.max_bound, reg_factor = reg_factor)
+        return inds_reg, rel_reg

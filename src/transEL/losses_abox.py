@@ -65,6 +65,18 @@ class Box():
         # return th.norm(box1.lower_corner - box2.lower_corner, p=2, dim=1)
         return (box1.lower_corner - box2.lower_corner).pow(2).sum(dim=1)
 
+    @check_output_shape
+    def point_to_segment_distance2(box1, box2):
+        ray = box1.upper_corner - box1.lower_corner
+        upper_condition = th.relu(box1.upper_corner - box2.upper_corner)
+        segment = box2.upper_corner - box2.lower_corner
+        angle_condition = 1 - th.sigmoid(th.sum(ray * segment, dim=1))
+
+        if len(box1.lower_corner) > 0:
+            assert not th.allclose(segment, th.zeros_like(segment)), f"Segment is zero: {segment}, segment max: {segment.max(dim=1)}, segment min: {segment.min(dim=1)}"
+            assert upper_condition.shape[0] == angle_condition.shape[0], f"Upper condition shape: {upper_condition.shape[0]}, angle condition shape: {angle_condition.shape[0]}"
+
+        return upper_condition.pow(2).sum(dim=1) + angle_condition
 
     @check_output_shape
     def point_to_segment_distance(box1, box2):
@@ -82,6 +94,10 @@ class Box():
         P = box1.lower_corner
         A = box2.lower_corner
         B = box2.upper_corner
+
+        if len(A) > 0:
+            assert th.allclose(box1.lower_corner, box1.upper_corner), f"Box1 lower corner: {box1.lower_corner}, upper corner: {box1.upper_corner}"
+            assert not th.allclose(box2.lower_corner, box2.upper_corner), f"Box2 lower corner: {box2.lower_corner}, upper corner: {box2.upper_corner}"
         
         # Vector from A to B for each batch
         AB = B - A  # shape (b, n)
@@ -140,6 +156,7 @@ class Box():
         
         new_lower_corner[unbound_dimension] = min_bound
         delta = new_upper_corner - new_lower_corner
+        # print("Delta max: ", delta.max(), "Delta min: ", delta.min())
         delta[unbound_dimension] = new_upper_corner[unbound_dimension]
         return Box(new_lower_corner, delta)
  
@@ -241,6 +258,12 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
     r_mask = rel_mask(trans_data[:, 1])
     r_trans = th.abs(r_embed * r_mask)
 
+    
+    min_r_trans = r_trans.min(dim=1).values
+    max_r_trans = r_trans.max(dim=1).values
+    # print("Min r trans: ", min_r_trans)
+    # print("Max r trans: ", max_r_trans)
+    
     i2_trans = individual_embed(trans_data[:, 2])
 
     off_i1_trans = th.zeros_like(i1_trans)
@@ -248,7 +271,8 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
 
     box_c_trans = Box(i1_trans, off_i1_trans)
     box_d_trans = Box(i2_trans - r_trans, off_i2_trans)
-
+    box_d_trans = Box.unbound(box_d_trans, r_mask)
+    
     if neg:
         # transitive_loss = Box.non_inclusion(box_c_trans, box_d_trans, r_trans, margin)
         transitive_loss = Box.point_to_segment_distance(box_c_trans, box_d_trans)
@@ -279,12 +303,22 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
 
 def regularization_loss(ind_lower, max_bound, reg_factor):
     lower = ind_lower.weight
-    lower_condition =  th.relu(-lower).mean() * reg_factor
-    upper_condition = th.relu(lower - max_bound).mean() * reg_factor
+    lower_condition =  th.relu(max_bound/4-lower).mean() #* reg_factor
+    upper_condition = th.relu(lower - max_bound).mean() #* reg_factor
     return lower_condition + upper_condition
 
-# def regularization_loss(rel_embed, rel_mask, transitive_ids, reg_factor=0.1):
-    # r = th.abs(rel_embed(transitive_ids)) * rel_mask(transitive_ids)
+def rel_regularization_loss(rel_embed, rel_mask, transitive_ids, max_bound, reg_factor=0.1):
+    range_ = th.arange(rel_embed.weight.shape[0]).to(rel_embed.weight.device)
+    mask = th.isin(range_, transitive_ids)
+
+    
+    r_trans = th.abs(rel_embed.weight[mask]) * rel_mask.weight[mask]
+    trans_condition = th.relu(r_trans - max_bound/4).sum()
+
+    r_non_trans = rel_embed.weight[~mask]
+    non_trans_condition = th.relu(th.abs(r_non_trans) - max_bound/4).mean()
+    
+    return trans_condition + non_trans_condition
     # norm_r = F.normalize(r, p=2, dim=1)
     # norm_loss = 0 #th.relu(0.5 - norm_r).mean()
         

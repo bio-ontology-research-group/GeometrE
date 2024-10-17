@@ -14,6 +14,7 @@ from tqdm import tqdm
 from module_abox import TransitiveELModule
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 from itertools import cycle
 import logging
 import click as ck
@@ -128,6 +129,78 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
         raise ValueError(f"Evaluator {evaluator_name} not found")
 
 
+class GCI2Dataset(th.utils.data.Dataset):
+    def __init__(self, data, num_entities, mode):
+        self.data = data
+        self.num_entities = num_entities
+        assert isinstance(data[0], tuple), f"Data must be a list of tuples, got {type(data[0])}"
+        self.count_by_head, self.count_by_tail = self.count_frequency()
+
+
+    def __getitem__(self, idx):
+        positive_sample = self.data[idx]
+
+        head, relation, tail = positive_sample
+
+        subsampling_weight = self.count_by_head[(head, relation)] + self.count_by_tail[(tail, relation)]
+        subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
+
+        negative_sample_list = []
+        negative_sample_size = 0
+
+        while negative_sample_size < self.negative_sample_size:
+            negative_sample = np.random.randint(self.num_entities, size=self.negative_sample_size*2)
+            if self.mode == 'head-batch':
+                mask = np.in1d(
+                    negative_sample, 
+                    self.true_head[(relation, tail)], 
+                    assume_unique=True, 
+                    invert=True
+                )
+            elif self.mode == 'tail-batch':
+                mask = np.in1d(
+                    negative_sample, 
+                    self.true_tail[(head, relation)], 
+                    assume_unique=True, 
+                    invert=True
+                )
+            else:
+                raise ValueError('Training batch mode %s not supported' % self.mode)
+            negative_sample = negative_sample[mask]
+            negative_sample_list.append(negative_sample)
+            negative_sample_size += negative_sample.size
+        
+        negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
+
+        negative_sample = torch.LongTensor(negative_sample)
+
+        positive_sample = torch.LongTensor(positive_sample)
+            
+        return positive_sample, negative_sample, subsampling_weight, self.mode
+
+        
+def count_frequency(data):
+    head_freq = {}
+    tail_freq = {}
+    assert data.shape[1] == 3, f"Data must have 3 columns, got {data.shape[1]}"
+    for row in data:
+        h = row[0].item()
+        r = row[1].item()
+        t = row[2].item()
+        
+        if (h, r) not in head_freq:
+            head_freq[(h, r)] = 0
+        head_freq[(h, r)] += 1
+
+        if (t, r) not in tail_freq:
+            tail_freq[(t, r)] = 0
+        tail_freq[(t, r)] += 1
+                            
+    return head_freq, tail_freq
+                            
+                
+    
+    
 class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
                  module_margin, loss_margin, max_bound, learning_rate,
@@ -209,6 +282,8 @@ class GeometricELModel(EmbeddingELModel):
         dls_weights = {gci_name: ds_size/total_dls_size for gci_name, ds_size in dls_sizes.items()}
 
         main_dl = dls["gci2"]
+        frequencies_head, frequencies_tail = count_frequency(self.training_datasets["gci2"].data)
+
         logger.info(f"Training with {len(main_dl)} batches of size {self.batch_size}")
         dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci2"}
         logger.info(f"Dataloaders: {dls_sizes}")
@@ -226,37 +301,84 @@ class GeometricELModel(EmbeddingELModel):
         
         num_classes = len(self.dataset.classes)
 
+        
         self.module = self.module.to(self.device)
         for epoch in tqdm(range(self.epochs)):
             self.module.train()
             total_train_loss = 0
-            total_reg_loss = 0
+            total_inds_reg_loss = 0
+            total_rels_reg_loss = 0
+
+            # if epoch % 30 == 0:
+                #perturbate 5% of the embeddings
+                # self.module.class_lower.weight.data += th.randn_like(self.module.class_lower.weight.data) * 0.1
+                # self.module.rel_embed.weight.data += th.randn_like(self.module.rel_embed.weight.data) * 0.1
+
             for batch_data, in main_dl:
+
+                assert batch_data.shape[1] == 3, f"Batch data must have 3 columns, got {batch_data.shape[1]}"
+
+                sampling_weights_head = []
+                sampling_weights_tail = []
+                for row in batch_data:
+                    h = row[0].item()
+                    r = row[1].item()
+                    t = row[2].item()
+                    sampling_weights_head.append(frequencies_head[(h, r)])
+                    sampling_weights_tail.append(frequencies_tail[(t, r)])
+
+                sampling_weights_head = th.sqrt(1 / th.Tensor(sampling_weights_head)).to(self.device)
+                sampling_weights_tail = th.sqrt(1 / th.Tensor(sampling_weights_tail)).to(self.device)
+                
+
                 loss = 0
                 batch_data = batch_data.to(self.device)
                 pos_logits = self.tbox_forward(batch_data, "gci2").unsqueeze(1)
+                pos_logits = - F.logsigmoid(self.loss_margin - pos_logits)
+                logger.debug(f"Pos logits shape: {pos_logits.shape}")
                 # print(f"Max pos logits: {pos_logits.max()}, Min pos logits: {pos_logits.min()}")
-                loss += - criterion_bpr(self.loss_margin - pos_logits).mean()
+
+                positive_loss = pos_logits.mean()
+                # positive_loss = (sampling_weights.unsqueeze(1) * pos_logits).sum()/(sampling_weights_head.sum() + sampling_weights_tail.sum())
+                logger.debug(f"Positive loss shape: {positive_loss.shape}")
+
+                adversarial_temperature = 1.0
 
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
-                # if random.random() < 0.5:
                 neg_batch = th.cat([batch_data[:, :2].repeat(self.num_negs, 1), neg_idxs.unsqueeze(1)], dim=1)
-                                    
-                neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True).reshape(-1, self.num_negs)
-                # print(f"Max neg logits: {neg_logits.max()}, Min neg logits: {neg_logits.min()}")
-                loss += - criterion_bpr(neg_logits - self.loss_margin).mean()
-                # print(pos_logits.shape, neg_logits.shape)
-                # loss += th.relu(self.loss_margin + pos_logits - neg_logits)
+                neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True).reshape(-1, self.num_negs)
+                logger.debug(f"Neg logits shape: {neg_logits_head.shape}")
+                neg_logits_head = - (F.softmax(neg_logits_head * adversarial_temperature, dim = 1).detach() 
+                              * F.logsigmoid(neg_logits_head - self.loss_margin)).sum(dim = 1)
                 
-                
+                negative_loss_head =  (sampling_weights_head * neg_logits_head).sum()/sampling_weights_head.sum()
+
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([neg_idxs.unsqueeze(1), batch_data[:, 1:].repeat(self.num_negs, 1)], dim=1)
-                neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True).reshape(-1, self.num_negs)
+                neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True).reshape(-1, self.num_negs)
+                neg_logits_tail = - (F.softmax(neg_logits_tail * adversarial_temperature, dim = 1).detach() 
+                              * F.logsigmoid(neg_logits_tail - self.loss_margin)).sum(dim = 1)
+                negative_loss_tail =  (sampling_weights_tail * neg_logits_tail).sum()/sampling_weights_tail.sum()
+                
+                
+                # bpr_neg_loss = - criterion_bpr(neg_logits - self.loss_margin)
+                # logger.debug(f"BPR neg loss shape: {bpr_neg_loss.shape}")
+                # loss += (bpr_neg_loss * sampling_weights.unsqueeze(1)).mean(dim=1).sum()
+                # loss += th.relu(self.loss_margin + pos_logits - neg_logits)
+                
+                
+                
                 # print(f"Max neg logits: {neg_logits.max()}, Min neg logits: {neg_logits.min()}")
-                loss += - criterion_bpr(neg_logits - self.loss_margin).mean()
+                # bpr_neg_loss = - criterion_bpr(neg_logits - self.loss_margin)
+                # loss += (bpr_neg_loss * sampling_weights.unsqueeze(1)).mean(dim=1).sum()
+
+                loss = positive_loss + negative_loss_head + negative_loss_tail 
+                
                 # loss += th.relu(self.loss_margin + pos_logits - neg_logits)
 
-                loss = loss.mean()
+                
+
+                # loss = loss.mean()
                 
                 # for i in range(self.num_negs):
                     # neg_idxs = th.randint(0, num_classes, (len(batch_data),2), device=self.device)
@@ -273,22 +395,22 @@ class GeometricELModel(EmbeddingELModel):
                         # loss += th.relu(self.loss_margin + pos_logits - neg_logits_head).mean()
                         # loss += - criterion_bpr(neg_logits_head - self.loss_margin).mean() 
                                                                                 
-                loss /= self.num_negs
-                    
                 # if self.transitive:
-                reg_loss = self.module.regularization_loss()
-                loss += reg_loss
+                inds_reg_loss, rels_reg_loss = self.module.regularization_loss()
+                loss += inds_reg_loss # + rels_reg_loss
 
                 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_train_loss += loss.item()
-                total_reg_loss += reg_loss.item()
+                total_inds_reg_loss += inds_reg_loss.item()
+                total_rels_reg_loss += rels_reg_loss.item()
 
             # scheduler.step()
             total_train_loss /= len(main_dl)
-            total_reg_loss /= len(main_dl)
+            total_inds_reg_loss /= len(main_dl)
+            total_rels_reg_loss /= len(main_dl)
             if epoch % self.evaluate_every == 0:
                 valid_metrics = self.evaluator.evaluate_overall(self.module, mode="valid")
                 print(valid_metrics)
@@ -314,8 +436,18 @@ class GeometricELModel(EmbeddingELModel):
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
 
-                logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - Reg Loss: {total_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
 
+                rel_embs = self.module.rel_embed.weight.data
+                rel_mask = self.module.rel_mask.weight.data
+
+                rel_embs[self.transitive_ids] = rel_embs[self.transitive_ids] * rel_mask[self.transitive_ids]
+                masked_rel_embs = rel_embs
+                min_rel_emb = masked_rel_embs.min(dim=1).values
+                max_rel_emb = masked_rel_embs.max(dim=1).values
+                print(f"Min rel emb: {min_rel_emb}")
+                print(f"Max rel emb: {max_rel_emb}")
+                
     def test(self):
         self.module.load_state_dict(th.load(self.model_filepath, map_location=self.device))
         self.module.to(self.device)
