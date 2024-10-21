@@ -68,14 +68,29 @@ class Box():
 
     @check_output_shape
     def order_loss(box1, box2, margin):
+        logger.debug(f"Box1 lower corner shape: {box1.lower_corner.shape}, Box2 lower corner shape: {box2.lower_corner.shape}")
+        # box1_norm = th.norm(box1.lower_corner, p=2, dim=1)
+        # box2_norm = th.norm(box2.lower_corner, p=2, dim=1)
+        
+        # box1_lower_corner = box1.lower_corner/th.norm(box1.lower_corner, p=2, dim=1).unsqueeze(1)
+        # box2_lower_corner = box2.lower_corner/th.norm(box2.lower_corner, p=2, dim=1).unsqueeze(1)
+                 
+        # return th.linalg.norm(th.relu(box1_lower_corner - box2_lower_corner - margin), dim=1)
+        # return th.norm(th.relu(box1.lower_corner - box2.lower_corner - margin), p=2, dim=1)
+        # return (th.relu(box1.lower_corner - box2.lower_corner - margin)).pow(2).sum(dim=1)
         return th.linalg.norm(th.relu(box1.lower_corner - box2.lower_corner - margin), dim=1)
-    
+
 
         
     @check_output_shape
     def point_distance(box1, box2):
+        # box1_lower_corner = box1.lower_corner/th.norm(box1.lower_corner, p=2, dim=1).unsqueeze(1)
+        # box2_lower_corner = box2.lower_corner/th.norm(box2.lower_corner, p=2, dim=1).unsqueeze(1)
+        # return th.norm(box1_lower_corner - box2_lower_corner, p=2, dim=1)
+        # return (box1_lower_corner - box2_lower_corner).pow(2).sum(dim=1)
         # return th.norm(box1.lower_corner - box2.lower_corner, p=2, dim=1)
-        return (box1.lower_corner - box2.lower_corner).pow(2).sum(dim=1)
+        return th.linalg.norm(box1.lower_corner - box2.lower_corner, dim=1)
+        # return (box1.lower_corner - box2.lower_corner).pow(2).sum(dim=1)
 
     @check_output_shape
     def point_to_segment_distance2(box1, box2):
@@ -268,7 +283,7 @@ def object_property_assertion_loss(data, individual_embed, rel_embed, rel_mask, 
     
     r_embed = rel_embed(trans_data[:, 1])
     r_mask = rel_mask(trans_data[:, 1])
-    r_trans = r_embed #th.abs(r_embed)
+    r_trans = th.abs(r_embed) #th.abs(r_embed)
     # r_trans = th.abs(r_embed * r_mask)
 
     

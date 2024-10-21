@@ -25,9 +25,10 @@ class TransitiveELModule(ELModule):
         # self.class_lower = nn.Embedding(nb_ont_classes, embed_dim)
         # nn.init.xavier_uniform_(self.class_lower.weight)
 
-        # self.class_lower = nn.Embedding(nb_ont_classes, embed_dim)
+        self.class_lower = nn.Embedding(nb_ont_classes, embed_dim)
+        nn.init.xavier_uniform_(self.class_lower.weight)
         # nn.init.uniform_(self.class_lower.weight, a=0, b=max_bound)
-        self.class_lower = self.init_embeddings(nb_ont_classes, embed_dim)
+        
         
         self.class_delta = self.init_embeddings(nb_ont_classes, embed_dim)
         self.individual_embed = nn.Embedding(nb_individuals, embed_dim)
