@@ -69,8 +69,8 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
                           "embed_dim": embed_dim,
                           "module_margin": module_margin,
                           "loss_margin": loss_margin,
-                          "max_bound": max_bound,
                           "learning_rate": learning_rate,
+                          "batch_size": batch_size,
                           "num_negs": num_negs,
                           "transitive": transitive
                           })
@@ -79,7 +79,7 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
         embed_dim = wandb.config.embed_dim
         module_margin = wandb.config.module_margin
         loss_margin = wandb.config.loss_margin
-        max_bound = wandb.config.max_bound
+        batch_size = wandb.config.batch_size
         learning_rate = wandb.config.learning_rate
         num_negs = wandb.config.num_negs
         transitive = wandb.config.transitive
@@ -340,13 +340,21 @@ class GeometricELModel(EmbeddingELModel):
                 
                 loss = 0
                 batch_data = batch_data.to(self.device)
-                trans_pos_logits, non_trans_pos_logits = self.tbox_forward(batch_data, "gci2", train=True)
+
+                if self.transitive:
+                    trans_pos_logits, non_trans_pos_logits = self.tbox_forward(batch_data, "gci2", train=True)
+                else:
+                    pos_logits = self.tbox_forward(batch_data, "gci2", train=True)
                 # trans_pos_loss = - F.logsigmoid(self.loss_margin - trans_pos_logits).mean()
                 # non_trans_pos_loss = - F.logsigmoid(self.loss_margin - non_trans_pos_logits).mean()
                                 
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([batch_data[:, :2].repeat(self.num_negs, 1), neg_idxs.unsqueeze(1)], dim=1)
-                trans_neg_logits_head, non_trans_neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
+
+                if self.transitive:
+                    trans_neg_logits_head, non_trans_neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
+                else:
+                    neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
                 # trans_neg_loss_head = - F.logsigmoid(trans_neg_logits_head - self.loss_margin).mean()
                 # non_trans_neg_loss_head = - F.logsigmoid(non_trans_neg_logits_head - self.loss_margin).mean()
 
@@ -366,7 +374,11 @@ class GeometricELModel(EmbeddingELModel):
                 
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([neg_idxs.unsqueeze(1), batch_data[:, 1:].repeat(self.num_negs, 1)], dim=1)
-                trans_neg_logits_tail, non_trans_neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)#.reshape(-1, self.num_negs)
+
+                if self.transitive:
+                    trans_neg_logits_tail, non_trans_neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)#.reshape(-1, self.num_negs)
+                else:
+                    neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
                 # trans_neg_loss_tail = - F.logsigmoid(trans_neg_logits_tail - self.loss_margin).mean()
                 # non_trans_neg_loss_tail = - F.logsigmoid(non_trans_neg_logits_tail - self.loss_margin).mean()
 
@@ -381,24 +393,31 @@ class GeometricELModel(EmbeddingELModel):
                                           # * F.logsigmoid(non_trans_neg_logits_tail - self.loss_margin)).sum(dim = 1)
                 # non_trans_neg_loss_tail =  (non_trans_sampling_weights_tail * non_trans_neg_logits_tail).sum()/sampling_weights_tail.sum()
 
+                if self.transitive:
+                    trans_neg_logits_head = trans_neg_logits_head.reshape(-1, self.num_negs)
+                    non_trans_neg_logits_head = non_trans_neg_logits_head.reshape(-1, self.num_negs)
+                    trans_neg_logits_tail = trans_neg_logits_tail.reshape(-1, self.num_negs)
+                    non_trans_neg_logits_tail = non_trans_neg_logits_tail.reshape(-1, self.num_negs)
 
-                trans_neg_logits_head = trans_neg_logits_head.reshape(-1, self.num_negs)
-                non_trans_neg_logits_head = non_trans_neg_logits_head.reshape(-1, self.num_negs)
+                    trans_neg_logits = th.cat([trans_neg_logits_head, trans_neg_logits_tail], dim=1)
+                    non_trans_neg_logits = th.cat([non_trans_neg_logits_head, non_trans_neg_logits_tail], dim=1)
 
-                trans_neg_logits_tail = trans_neg_logits_tail.reshape(-1, self.num_negs)
-                non_trans_neg_logits_tail = non_trans_neg_logits_tail.reshape(-1, self.num_negs)
+                    trans_loss = - F.logsigmoid(trans_neg_logits - trans_pos_logits.unsqueeze(1)).mean()
+                    non_trans_loss = - F.logsigmoid(non_trans_neg_logits - non_trans_pos_logits.unsqueeze(1)).mean()
 
-                trans_neg_logits = th.cat([trans_neg_logits_head, trans_neg_logits_tail], dim=1)
-                non_trans_neg_logits = th.cat([non_trans_neg_logits_head, non_trans_neg_logits_tail], dim=1)
+                    loss = trans_loss + non_trans_loss
+                else:
+                    neg_logits_head = neg_logits_head.reshape(-1, self.num_negs)
+                    neg_logits_tail = neg_logits_tail.reshape(-1, self.num_negs)
 
-                trans_loss = - F.logsigmoid(trans_neg_logits - trans_pos_logits.unsqueeze(1)).mean()
-                non_trans_loss = - F.logsigmoid(non_trans_neg_logits - non_trans_pos_logits.unsqueeze(1)).mean()
-                
+                    neg_logits = th.cat([neg_logits_head, neg_logits_tail], dim=1)
+
+                    loss = - F.logsigmoid(neg_logits - pos_logits.unsqueeze(1)).mean()
                 
                 # trans_loss = trans_pos_loss + trans_neg_loss_head + trans_neg_loss_tail
                 # non_trans_loss = non_trans_pos_loss + non_trans_neg_loss_head + non_trans_neg_loss_tail
                 
-                loss = trans_loss + non_trans_loss
+                
                 
                 inds_reg_loss, rels_reg_loss = self.module.regularization_loss()
                 
