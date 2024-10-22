@@ -370,7 +370,7 @@ class GeometricELModel(EmbeddingELModel):
                                           # * F.logsigmoid(non_trans_neg_logits_head - self.loss_margin)).sum(dim = 1)
                 # non_trans_neg_loss_head =  (non_trans_sampling_weights_head * non_trans_neg_logits_head).sum()/sampling_weights_head.sum()
 
-
+                
                 
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([neg_idxs.unsqueeze(1), batch_data[:, 1:].repeat(self.num_negs, 1)], dim=1)
@@ -428,13 +428,18 @@ class GeometricELModel(EmbeddingELModel):
                 total_train_loss += loss.item()
                 total_inds_reg_loss += inds_reg_loss.item()
                 total_rels_reg_loss += rels_reg_loss.item()
-                total_trans_loss += trans_loss.item()
-                total_non_trans_loss += non_trans_loss.item()
+                if self.transitive:
+                    total_trans_loss += trans_loss.item()
+                    total_non_trans_loss += non_trans_loss.item()
                 
             # scheduler.step()
             total_train_loss /= len(main_dl)
             total_inds_reg_loss /= len(main_dl)
             total_rels_reg_loss /= len(main_dl)
+            if self.transitive:
+                total_trans_loss /= len(main_dl)
+                total_non_trans_loss /= len(main_dl)
+            
             if epoch % self.evaluate_every == 0:
                 valid_metrics = self.evaluator.evaluate_overall(self.module, mode="valid")
                 print(valid_metrics)
@@ -460,8 +465,11 @@ class GeometricELModel(EmbeddingELModel):
                     logger.info(f"Early stopping at epoch {epoch}")
                     break
 
-                logger.info(f"Epoch {epoch} - Train Trans Loss: {total_trans_loss:4f} - Total Non Trans Loss: {total_non_trans_loss:4f}- IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
-
+                if self.transitive:
+                    logger.info(f"Epoch {epoch} - Train Trans Loss: {total_trans_loss:4f} - Total Non Trans Loss: {total_non_trans_loss:4f}- IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                else:
+                        logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                    
                 rel_embs = self.module.rel_embed.weight.data
                 rel_mask = self.module.rel_mask.weight.data
 
