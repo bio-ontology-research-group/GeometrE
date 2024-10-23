@@ -804,20 +804,24 @@ class RelationKGEvaluator(Evaluator):
                     
         results = dict()
 
+        
+        
+        
+
         if mode == "valid":
             eval_tuples = self.valid_tuples
         elif mode == "test":
             eval_tuples = self.test_tuples
 
             if self.evaluate_with_deductive_closure:
-                deductive_tuples = self.deductive_closure_tuples
                 train_tuples = self.train_tuples
                 valid_tuples = self.valid_tuples
+                deductive_tuples = self.deductive_closure_tuples        
                 mask1 = (deductive_tuples.unsqueeze(1) == train_tuples).all(dim=-1).any(dim=-1)
                 mask2 = (deductive_tuples.unsqueeze(1) == valid_tuples).all(dim=-1).any(dim=-1)
                 mask = mask1 | mask2
                 deductive_closure_tuples = deductive_tuples[~mask]
-                eval_tuples = deductive_tuples
+                eval_tuples = deductive_closure_tuples
 
         logger.debug(f"Shape of eval_tuples: {eval_tuples.shape}")
 
@@ -898,10 +902,9 @@ class RelationKGEvaluator(Evaluator):
         metrics = dict()
         ranks, franks = dict(), dict()
 
+        deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
         if mode == "test":
             filtering_labels = self.get_filtering_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
-            # if self.evaluate_with_deductive_closure:
-            deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
             
         with th.no_grad():
             for batch, in dataloader: #tqdm(dataloader):
@@ -928,7 +931,7 @@ class RelationKGEvaluator(Evaluator):
                     preds = logits_heads[i][perm]
                     preds[head_perm] = 10000
                     
-                    if self.evaluate_with_deductive_closure:
+                    if self.evaluate_with_deductive_closure or True:
                         ded_labels = deductive_labels[head][perm].to(preds.device)
                         ded_labels[tail] = 1
                         ded_labels[head_perm] = 1
@@ -946,10 +949,10 @@ class RelationKGEvaluator(Evaluator):
                             all_filtering = th.max(filtering, ded_labels)
                             
                         else:
-                            # ded_labels = deductive_labels[head][perm].to(preds.device)
-                            # all_filtering = th.max(filtering, ded_labels)
+                            ded_labels = deductive_labels[head][perm].to(preds.device)
+                            all_filtering = th.max(filtering, ded_labels)
                             
-                            all_filtering = filtering
+                            # all_filtering = filtering
                         all_filtering[tail] = 1
                         all_filtering[head_perm] = 1
                         f_preds = preds * all_filtering
@@ -977,7 +980,7 @@ class RelationKGEvaluator(Evaluator):
                     preds = logits_tails[i][perm]
                     preds[tail_perm] = 10000
                     
-                    if self.evaluate_with_deductive_closure:
+                    if self.evaluate_with_deductive_closure or True:
                         ded_labels = deductive_labels[:, tail][perm].to(preds.device)
                         ded_labels[head] = 1
                         ded_labels[tail_perm] = 1
@@ -995,10 +998,10 @@ class RelationKGEvaluator(Evaluator):
                             all_filtering = th.max(filtering, ded_labels)
                             
                         else:
-                            # ded_labels = deductive_labels[:, tail][perm].to(preds.device)
-                            # all_filtering = th.max(filtering, ded_labels)
+                            ded_labels = deductive_labels[:, tail][perm].to(preds.device)
+                            all_filtering = th.max(filtering, ded_labels)
                         
-                            all_filtering = filtering
+                            # all_filtering = filtering
                         all_filtering[head] = 1
                         all_filtering[tail_perm] = 1
                         f_preds = preds * all_filtering
