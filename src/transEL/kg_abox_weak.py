@@ -32,7 +32,6 @@ logger.setLevel(logging.INFO)
 @ck.option("--batch_size", "-bs", default=400000, help="Batch size")
 @ck.option("--module_margin", "-mm", default=0.1, help="Margin for the module")
 @ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
-@ck.option("--max_bound", "-maxb", default=1.0, help="Maximum bound for the initial embedding space")
 @ck.option("--learning_rate", "-lr", default=0.001, help="Learning rate")
 @ck.option("--num_negs", "-negs", default=1, help="Number of negative samples")
 @ck.option("--epochs", "-ep", default=10000, help="Number of epochs")
@@ -44,9 +43,9 @@ logger.setLevel(logging.INFO)
 @ck.option("--no_sweep", "-ns", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
 def main(dataset_name, evaluator_name, embed_dim, batch_size,
-         module_margin, loss_margin, max_bound, learning_rate,
-         num_negs, epochs, evaluate_every, evaluate_deductive,
-         transitive, device, wandb_description, no_sweep, only_test):
+         module_margin, loss_margin, learning_rate, num_negs, epochs,
+         evaluate_every, evaluate_deductive, transitive, device,
+         wandb_description, no_sweep, only_test):
 
     seed_everything(42)
 
@@ -96,11 +95,11 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
     model_dir = f"{root_dir}/../models/"
     os.makedirs(model_dir, exist_ok=True)
 
-    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{max_bound}_{learning_rate}_{num_negs}_{transitive}.pt"
+    model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{num_negs}_{transitive}.pt"
     model = GeometricELModel(evaluator_name, dataset, batch_size,
                              embed_dim, module_margin, loss_margin,
-                             max_bound, learning_rate, num_negs,
-                             model_filepath, epochs, evaluate_every,
+                             learning_rate, num_negs, model_filepath,
+                             epochs, evaluate_every,
                              evaluate_deductive, transitive, device,
                              wandb_logger)
 
@@ -128,57 +127,6 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
     else:
         raise ValueError(f"Evaluator {evaluator_name} not found")
 
-
-class GCI2Dataset(th.utils.data.Dataset):
-    def __init__(self, data, num_entities, mode):
-        self.data = data
-        self.num_entities = num_entities
-        assert isinstance(data[0], tuple), f"Data must be a list of tuples, got {type(data[0])}"
-        self.count_by_head, self.count_by_tail = self.count_frequency()
-
-
-    def __getitem__(self, idx):
-        positive_sample = self.data[idx]
-
-        head, relation, tail = positive_sample
-
-        subsampling_weight = self.count_by_head[(head, relation)] + self.count_by_tail[(tail, relation)]
-        subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
-
-        negative_sample_list = []
-        negative_sample_size = 0
-
-        while negative_sample_size < self.negative_sample_size:
-            negative_sample = np.random.randint(self.num_entities, size=self.negative_sample_size*2)
-            if self.mode == 'head-batch':
-                mask = np.in1d(
-                    negative_sample, 
-                    self.true_head[(relation, tail)], 
-                    assume_unique=True, 
-                    invert=True
-                )
-            elif self.mode == 'tail-batch':
-                mask = np.in1d(
-                    negative_sample, 
-                    self.true_tail[(head, relation)], 
-                    assume_unique=True, 
-                    invert=True
-                )
-            else:
-                raise ValueError('Training batch mode %s not supported' % self.mode)
-            negative_sample = negative_sample[mask]
-            negative_sample_list.append(negative_sample)
-            negative_sample_size += negative_sample.size
-        
-        negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
-
-        negative_sample = torch.LongTensor(negative_sample)
-
-        positive_sample = torch.LongTensor(positive_sample)
-            
-        return positive_sample, negative_sample, subsampling_weight, self.mode
-
-        
 def count_frequency(data):
     head_freq = {}
     tail_freq = {}
@@ -199,11 +147,9 @@ def count_frequency(data):
     return head_freq, tail_freq
                             
                 
-    
-    
 class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
-                 module_margin, loss_margin, max_bound, learning_rate,
+                 module_margin, loss_margin, learning_rate,
                  num_negs, model_filepath, epochs, evaluate_every,
                  evaluate_deductive, transitive,
                  device, wandb_logger):
@@ -223,7 +169,6 @@ class GeometricELModel(EmbeddingELModel):
                                          margin=module_margin,
                                          transitive=transitive,
                                          transitive_ids=self.transitive_ids,
-                                         max_bound = max_bound
                                          )
 
         self.evaluator = evaluator_resolver(evaluator_name, dataset,
@@ -306,8 +251,6 @@ class GeometricELModel(EmbeddingELModel):
         for epoch in tqdm(range(self.epochs)):
             self.module.train()
             total_train_loss = 0
-            total_inds_reg_loss = 0
-            total_rels_reg_loss = 0
             total_trans_loss = 0
             total_non_trans_loss = 0
                                                             
@@ -402,8 +345,8 @@ class GeometricELModel(EmbeddingELModel):
                     trans_neg_logits = th.cat([trans_neg_logits_head, trans_neg_logits_tail], dim=1)
                     non_trans_neg_logits = th.cat([non_trans_neg_logits_head, non_trans_neg_logits_tail], dim=1)
 
-                    trans_loss = - F.logsigmoid(trans_neg_logits - trans_pos_logits.unsqueeze(1)).mean()
-                    non_trans_loss = - F.logsigmoid(non_trans_neg_logits - non_trans_pos_logits.unsqueeze(1)).mean()
+                    trans_loss = - F.logsigmoid(trans_neg_logits - trans_pos_logits.unsqueeze(1) - self.loss_margin).mean()
+                    non_trans_loss = - F.logsigmoid(non_trans_neg_logits - non_trans_pos_logits.unsqueeze(1) - self.loss_margin).mean()
 
                     loss = trans_loss + non_trans_loss
                 else:
@@ -412,30 +355,22 @@ class GeometricELModel(EmbeddingELModel):
 
                     neg_logits = th.cat([neg_logits_head, neg_logits_tail], dim=1)
 
-                    loss = - F.logsigmoid(neg_logits - pos_logits.unsqueeze(1)).mean()
+                    loss = - F.logsigmoid(neg_logits - pos_logits.unsqueeze(1) - self.loss_margin).mean()
                 
                 # trans_loss = trans_pos_loss + trans_neg_loss_head + trans_neg_loss_tail
                 # non_trans_loss = non_trans_pos_loss + non_trans_neg_loss_head + non_trans_neg_loss_tail
-                
-                
-                
-                inds_reg_loss, rels_reg_loss = self.module.regularization_loss()
                 
                 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_train_loss += loss.item()
-                total_inds_reg_loss += inds_reg_loss.item()
-                total_rels_reg_loss += rels_reg_loss.item()
                 if self.transitive:
                     total_trans_loss += trans_loss.item()
                     total_non_trans_loss += non_trans_loss.item()
                 
             # scheduler.step()
             total_train_loss /= len(main_dl)
-            total_inds_reg_loss /= len(main_dl)
-            total_rels_reg_loss /= len(main_dl)
             if self.transitive:
                 total_trans_loss /= len(main_dl)
                 total_non_trans_loss /= len(main_dl)
@@ -466,17 +401,14 @@ class GeometricELModel(EmbeddingELModel):
                     break
 
                 if self.transitive:
-                    logger.info(f"Epoch {epoch} - Train Trans Loss: {total_trans_loss:4f} - Total Non Trans Loss: {total_non_trans_loss:4f}- IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                    logger.info(f"Epoch {epoch} - Train Trans Loss: {total_trans_loss:4f} - Total Non Trans Loss: {total_non_trans_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
                 else:
-                        logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - IReg Loss: {total_inds_reg_loss:4f} - RReg Loss: {total_rels_reg_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
+                    logger.info(f"Epoch {epoch} - Train Loss: {total_train_loss:4f} - Valid MRR: {valid_mrr:4f} - Valid MR: {valid_mr:4f}")
                     
                 rel_embs = self.module.rel_embed.weight.data
-                rel_mask = self.module.rel_mask.weight.data
-
-                rel_embs[self.transitive_ids] = rel_embs[self.transitive_ids]# * rel_mask[self.transitive_ids]
-                masked_rel_embs = rel_embs
-                min_rel_emb = masked_rel_embs.min(dim=1).values
-                max_rel_emb = masked_rel_embs.max(dim=1).values
+                
+                min_rel_emb = rel_embs.min(dim=1).values
+                max_rel_emb = rel_embs.max(dim=1).values
                 print(f"Min rel emb: {min_rel_emb}")
                 print(f"Max rel emb: {max_rel_emb}")
                 
