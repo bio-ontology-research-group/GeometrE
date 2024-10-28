@@ -767,7 +767,7 @@ class RelationKGEvaluator(Evaluator):
         deductive_labels = th.ones((num_heads, num_tails), dtype=th.float)
 
         deductive_tuples = self.deductive_closure_tuples[self.deductive_closure_tuples[:, 1] == relation_id]
-        
+
         for head, rel, tail in self.deductive_closure_tuples:
              deductive_labels[head, tail] = 10000
              deductive_labels[head, head] = 10000

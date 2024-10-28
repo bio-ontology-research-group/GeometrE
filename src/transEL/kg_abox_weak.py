@@ -26,7 +26,7 @@ logger.setLevel(logging.INFO)
 
 
 @ck.command()
-@ck.option("--dataset_name", "-ds", type=ck.Choice(["wn18rr", "wn18rr"]), default="wn18rr")
+@ck.option("--dataset_name", "-ds", type=ck.Choice(["wn18rr", "fb15k237", "yago310"]))
 @ck.option("--evaluator_name", "-e", default="kg", help="Evaluator to use")
 @ck.option("--embed_dim", "-dim", default=50, help="Embedding dimension")
 @ck.option("--batch_size", "-bs", default=400000, help="Batch size")
@@ -34,7 +34,7 @@ logger.setLevel(logging.INFO)
 @ck.option("--loss_margin", "-lm", default=0.1, help="Margin for the loss function")
 @ck.option("--learning_rate", "-lr", default=0.001, help="Learning rate")
 @ck.option("--num_negs", "-negs", default=1, help="Number of negative samples")
-@ck.option("--epochs", "-ep", default=10000, help="Number of epochs")
+@ck.option("--epochs", "-ep", default=10002, help="Number of epochs")
 @ck.option("--evaluate_every", "-every", default=50, help="Evaluate every n epochs")
 @ck.option("--evaluate_deductive", "-evalded", is_flag=True, help="Use deductive closure as positive examples for evaluation")
 @ck.option("--transitive", "-trans", type=ck.Choice(["yes", "no"]))
@@ -407,10 +407,10 @@ class GeometricELModel(EmbeddingELModel):
                     
                 rel_embs = self.module.rel_embed.weight.data
                 
-                min_rel_emb = rel_embs.min(dim=1).values
-                max_rel_emb = rel_embs.max(dim=1).values
-                print(f"Min rel emb: {min_rel_emb}")
-                print(f"Max rel emb: {max_rel_emb}")
+                # min_rel_emb = rel_embs.min(dim=1).values
+                # max_rel_emb = rel_embs.max(dim=1).values
+                # print(f"Min rel emb: {min_rel_emb}")
+                # print(f"Max rel emb: {max_rel_emb}")
                 
     def test(self):
         self.module.load_state_dict(th.load(self.model_filepath, map_location=self.device))
