@@ -708,7 +708,14 @@ class RelationEvaluator(Evaluator):
 class RelationKGEvaluator(Evaluator):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._test_trans_only_tuples = None
+    @property
+    def test_only_transitive_tuples(self):
+        if self._test_trans_only_tuples is None:
+            self._test_trans_only_tuples = self.create_tuples(self.dataset.transitive_test_ontology)
+        return self._test_trans_only_tuples
 
+        
     def get_relation_properties(self):
         roles = self.dataset.ontology.getObjectPropertiesInSignature()
         rbox_axioms = self.dataset.ontology.getRBoxAxioms(Imports.fromBoolean(True))
@@ -823,7 +830,7 @@ class RelationKGEvaluator(Evaluator):
                 deductive_closure_tuples = deductive_tuples[~mask]
                 eval_tuples = deductive_closure_tuples
 
-        logger.debug(f"Shape of eval_tuples: {eval_tuples.shape}")
+        logger.info(f"Shape of eval_tuples: {eval_tuples.shape}")
 
         all_ranks, all_franks = dict(), dict()
         num_eval_tuples = 0

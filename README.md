@@ -12,11 +12,18 @@
 </table>
 
 
-## Datasets statistics
+## Datasets preparation
 
+### Link prediction task
 
-GDA simpler dataset
-Train: 6627. Ratio: 0.6775380840404867
-Valid: 917. Ratio: 0.09375319496983948
-Test: 2237. Ratio: 0.22870872098967385
-Done
+Data is already preprocessed. We show the scripts we used to process it:
+For each dataset (WN18RR, FB15k-237), run the following scripts:
+
+```
+cd transEL/src/
+python saturate_graph.py -ds [wn18rr|fb15k237]
+python preprocess_kg.py -ds [wn18rr|fb15k237]
+python add_rbox.py -ds [wn18rr|fb15k237]
+```
+
+### 

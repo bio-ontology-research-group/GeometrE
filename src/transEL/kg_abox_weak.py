@@ -127,26 +127,6 @@ def evaluator_resolver(evaluator_name, *args, **kwargs):
     else:
         raise ValueError(f"Evaluator {evaluator_name} not found")
 
-def count_frequency(data):
-    head_freq = {}
-    tail_freq = {}
-    assert data.shape[1] == 3, f"Data must have 3 columns, got {data.shape[1]}"
-    for row in data:
-        h = row[0].item()
-        r = row[1].item()
-        t = row[2].item()
-        
-        if (h, r) not in head_freq:
-            head_freq[(h, r)] = 0
-        head_freq[(h, r)] += 1
-
-        if (t, r) not in tail_freq:
-            tail_freq[(t, r)] = 0
-        tail_freq[(t, r)] += 1
-                            
-    return head_freq, tail_freq
-                            
-                
 class GeometricELModel(EmbeddingELModel):
     def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
                  module_margin, loss_margin, learning_rate,
@@ -227,8 +207,7 @@ class GeometricELModel(EmbeddingELModel):
         dls_weights = {gci_name: ds_size/total_dls_size for gci_name, ds_size in dls_sizes.items()}
 
         main_dl = dls["gci2"]
-        # frequencies_head, frequencies_tail = count_frequency(self.training_datasets["gci2"].data)
-
+        
         logger.info(f"Training with {len(main_dl)} batches of size {self.batch_size}")
         dls = {gci_name: cycle(dl) for gci_name, dl in dls.items() if gci_name != "gci2"}
         logger.info(f"Dataloaders: {dls_sizes}")
@@ -237,8 +216,6 @@ class GeometricELModel(EmbeddingELModel):
         curr_tolerance = tolerance
 
         optimizer = th.optim.AdamW(self.module.parameters(), lr=self.learning_rate)
-        # optimizer = th.optim.SGD(self.module.parameters(), lr=self.learning_rate)
-        scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
         criterion_bpr = nn.LogSigmoid()
         best_mrr = 0
         best_mr = float("inf")
@@ -258,29 +235,6 @@ class GeometricELModel(EmbeddingELModel):
 
                 assert batch_data.shape[1] == 3, f"Batch data must have 3 columns, got {batch_data.shape[1]}"
 
-                # adversarial_temperature = 0.5
-                # sampling_weights_head = []
-                # sampling_weights_tail = []
-                # for row in batch_data:
-                    # h = row[0].item()
-                    # r = row[1].item()
-                    # t = row[2].item()
-                    # sampling_weights_head.append(frequencies_head[(h, r)])
-                    # sampling_weights_tail.append(frequencies_tail[(t, r)])
-
-                # sampling_weights_head = th.sqrt(1 / th.Tensor(sampling_weights_head)).to(self.device)
-                # sampling_weights_tail = th.sqrt(1 / th.Tensor(sampling_weights_tail)).to(self.device)
-                
-                # r = batch_data[:, 1]
-                # mask = th.isin(r, self.transitive_ids)
- 
-                # trans_sampling_weights_head = sampling_weights_head[mask]
-                # non_trans_sampling_weights_head = sampling_weights_head[~mask]
-
-                # trans_sampling_weights_tail = sampling_weights_tail[mask]
-                # non_trans_sampling_weights_tail = sampling_weights_tail[~mask]
-
-                
                 loss = 0
                 batch_data = batch_data.to(self.device)
 
@@ -288,8 +242,6 @@ class GeometricELModel(EmbeddingELModel):
                     trans_pos_logits, non_trans_pos_logits = self.tbox_forward(batch_data, "gci2", train=True)
                 else:
                     pos_logits = self.tbox_forward(batch_data, "gci2", train=True)
-                # trans_pos_loss = - F.logsigmoid(self.loss_margin - trans_pos_logits).mean()
-                # non_trans_pos_loss = - F.logsigmoid(self.loss_margin - non_trans_pos_logits).mean()
                                 
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([batch_data[:, :2].repeat(self.num_negs, 1), neg_idxs.unsqueeze(1)], dim=1)
@@ -298,44 +250,16 @@ class GeometricELModel(EmbeddingELModel):
                     trans_neg_logits_head, non_trans_neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
                 else:
                     neg_logits_head = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
-                # trans_neg_loss_head = - F.logsigmoid(trans_neg_logits_head - self.loss_margin).mean()
-                # non_trans_neg_loss_head = - F.logsigmoid(non_trans_neg_logits_head - self.loss_margin).mean()
+                                
 
-                
-                # trans_neg_logits_head = trans_neg_logits_head.reshape(-1, self.num_negs)
-                # non_trans_neg_logits_head = non_trans_neg_logits_head.reshape(-1, self.num_negs)
-
-                # trans_neg_logits_head = - (F.softmax(trans_neg_logits_head * adversarial_temperature, dim = 1).detach() 
-                                          # * F.logsigmoid(trans_neg_logits_head - self.loss_margin)).sum(dim = 1)
-                # trans_neg_loss_head =  (trans_sampling_weights_head * trans_neg_logits_head).sum()/sampling_weights_head.sum()
-
-                # non_trans_neg_logits_head = - (F.softmax(non_trans_neg_logits_head * adversarial_temperature, dim = 1).detach() 
-                                          # * F.logsigmoid(non_trans_neg_logits_head - self.loss_margin)).sum(dim = 1)
-                # non_trans_neg_loss_head =  (non_trans_sampling_weights_head * non_trans_neg_logits_head).sum()/sampling_weights_head.sum()
-
-                
-                
                 neg_idxs = th.randint(0, num_classes, (len(batch_data) * self.num_negs,), device=self.device)
                 neg_batch = th.cat([neg_idxs.unsqueeze(1), batch_data[:, 1:].repeat(self.num_negs, 1)], dim=1)
 
                 if self.transitive:
-                    trans_neg_logits_tail, non_trans_neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)#.reshape(-1, self.num_negs)
+                    trans_neg_logits_tail, non_trans_neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
                 else:
                     neg_logits_tail = self.tbox_forward(neg_batch, "gci2", neg=True, train=True)
-                # trans_neg_loss_tail = - F.logsigmoid(trans_neg_logits_tail - self.loss_margin).mean()
-                # non_trans_neg_loss_tail = - F.logsigmoid(non_trans_neg_logits_tail - self.loss_margin).mean()
-
-                # trans_neg_logits_tail = trans_neg_logits_tail.reshape(-1, self.num_negs)
-                # non_trans_neg_logits_tail = non_trans_neg_logits_tail.reshape(-1, self.num_negs)
-                
-                # trans_neg_logits_tail = - (F.softmax(trans_neg_logits_tail * adversarial_temperature, dim = 1).detach() 
-                                          # * F.logsigmoid(trans_neg_logits_tail - self.loss_margin)).sum(dim = 1)
-                # trans_neg_loss_tail =  (trans_sampling_weights_tail * trans_neg_logits_tail).sum()/sampling_weights_tail.sum()
-
-                # non_trans_neg_logits_tail = - (F.softmax(non_trans_neg_logits_tail * adversarial_temperature, dim = 1).detach() 
-                                          # * F.logsigmoid(non_trans_neg_logits_tail - self.loss_margin)).sum(dim = 1)
-                # non_trans_neg_loss_tail =  (non_trans_sampling_weights_tail * non_trans_neg_logits_tail).sum()/sampling_weights_tail.sum()
-
+                                                           
                 if self.transitive:
                     trans_neg_logits_head = trans_neg_logits_head.reshape(-1, self.num_negs)
                     non_trans_neg_logits_head = non_trans_neg_logits_head.reshape(-1, self.num_negs)
@@ -357,10 +281,7 @@ class GeometricELModel(EmbeddingELModel):
 
                     loss = - F.logsigmoid(neg_logits - pos_logits.unsqueeze(1) - self.loss_margin).mean()
                 
-                # trans_loss = trans_pos_loss + trans_neg_loss_head + trans_neg_loss_tail
-                # non_trans_loss = non_trans_pos_loss + non_trans_neg_loss_head + non_trans_neg_loss_tail
-                
-                
+                                
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -369,7 +290,7 @@ class GeometricELModel(EmbeddingELModel):
                     total_trans_loss += trans_loss.item()
                     total_non_trans_loss += non_trans_loss.item()
                 
-            # scheduler.step()
+            
             total_train_loss /= len(main_dl)
             if self.transitive:
                 total_trans_loss /= len(main_dl)

@@ -138,6 +138,7 @@ def print_as_md(overall_metrics, key=None):
 
 
     
-transitive_roles = {"wn18rr": ["_hypernym", "_has_part"]
-                    
+transitive_roles = {"wn18rr": ["_hypernym", "_has_part"],
+                    "fb15k237":["http://www.w3.org/medicine/symptom/symptom_of", "http://www.w3.org/location/location/contains"],
+                    "yago310": ["isLocatedIn"]
              }

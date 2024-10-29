@@ -68,6 +68,7 @@ class KGDataset(PathDataset):
 
         self.root_dir = root_dir
         self._deductive_closure_ontology = None
+        self._transitive_test_ontology = None
         
     @property
     def deductive_closure_ontology(self):
@@ -77,6 +78,15 @@ class KGDataset(PathDataset):
 
         return self._deductive_closure_ontology
 
+    @property
+    def transitive_test_ontology(self):
+        if self._transitive_test_ontology is None:
+            self._transitive_test_ontology = PathDataset(self.root_dir + "test_trans_only.owl").ontology
+            # self._deductive_closure_ontology = PathDataset(self.root_dir + "test_trans_only.owl").ontology
+
+        return self._transitive_test_ontology
+
+    
     @property
     def evaluation_classes(self):
         if self._evaluation_classes is None:
