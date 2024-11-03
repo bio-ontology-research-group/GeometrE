@@ -42,10 +42,11 @@ logger.setLevel(logging.INFO)
 @ck.option("--wandb_description", "-desc", default="default")
 @ck.option("--no_sweep", "-ns", is_flag=True)
 @ck.option("--only_test", "-ot", is_flag=True)
+@ck.option("--test_chains", "-tc", is_flag=True)
 def main(dataset_name, evaluator_name, embed_dim, batch_size,
          module_margin, loss_margin, learning_rate, num_negs, epochs,
          evaluate_every, evaluate_deductive, transitive, device,
-         wandb_description, no_sweep, only_test):
+         wandb_description, no_sweep, only_test, test_chains):
 
     seed_everything(42)
 
@@ -96,20 +97,38 @@ def main(dataset_name, evaluator_name, embed_dim, batch_size,
     os.makedirs(model_dir, exist_ok=True)
 
     model_filepath = f"{model_dir}/{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{num_negs}_{transitive}.pt"
-    model = GeometricELModel(evaluator_name, dataset, batch_size,
-                             embed_dim, module_margin, loss_margin,
-                             learning_rate, num_negs, model_filepath,
-                             epochs, evaluate_every,
+    model = GeometricELModel(evaluator_name, dataset_name, dataset,
+                             batch_size, embed_dim, module_margin,
+                             loss_margin, learning_rate, num_negs,
+                             model_filepath, epochs, evaluate_every,
                              evaluate_deductive, transitive, device,
                              wandb_logger)
 
     
     if not only_test:
         model.train()
-     
-    all_metrics = model.test()
-    print_as_md(all_metrics)
-    wandb_logger.log(all_metrics)
+
+    if test_chains:
+        if dataset_name == "wn18rr":
+            entity_prefix = "http://www.w3.org/2002/07/"
+            rel_prefix = "http://www.w3.org/2002/07/"
+            
+
+        
+        for relation_id in model.transitive_ids:
+            relation_id = relation_id.item()
+            chain_scores = model.test_chains(entity_prefix, rel_prefix, relation_id)
+            out_results_file = f"chain_results_{transitive}_rel_{relation_id}_{embed_dim}_{batch_size}_{module_margin}_{loss_margin}_{learning_rate}_{num_negs}.tsv"
+            with open(out_results_file, "w") as f:
+                for score1, score2, score3 in chain_scores:
+                    f.write(f"{score1}\t{score2}\t{score3}\n")
+            print(f"Results saved in {out_results_file}")
+        
+    else:
+        all_metrics = model.test()
+        print_as_md(all_metrics)
+
+        wandb_logger.log(all_metrics)
     wandb_logger.finish()
 
 
@@ -121,14 +140,15 @@ def dataset_resolver(dataset_name):
                                  
     return root_dir, KGDataset(root_dir)
     
-def evaluator_resolver(evaluator_name, *args, **kwargs):
+def evaluator_resolver(evaluator_name, dataset_name, *args, **kwargs):
+    root_dir = f"../../use_cases/{dataset_name.lower()}/data/"
     if evaluator_name.lower() == "kg":
-        return RelationKGEvaluator(*args, **kwargs)
+        return RelationKGEvaluator(root_dir, *args, **kwargs)
     else:
         raise ValueError(f"Evaluator {evaluator_name} not found")
 
 class GeometricELModel(EmbeddingELModel):
-    def __init__(self, evaluator_name, dataset, batch_size, embed_dim,
+    def __init__(self, evaluator_name, dataset_name, dataset, batch_size, embed_dim,
                  module_margin, loss_margin, learning_rate,
                  num_negs, model_filepath, epochs, evaluate_every,
                  evaluate_deductive, transitive,
@@ -151,7 +171,8 @@ class GeometricELModel(EmbeddingELModel):
                                          transitive_ids=self.transitive_ids,
                                          )
 
-        self.evaluator = evaluator_resolver(evaluator_name, dataset,
+        self.evaluator = evaluator_resolver(evaluator_name,
+                                            dataset_name, dataset,
                                             device, batch_size = 32,
                                             evaluate_with_deductive_closure=evaluate_deductive)
         self.learning_rate = learning_rate
@@ -340,5 +361,12 @@ class GeometricELModel(EmbeddingELModel):
         
         return self.evaluator.evaluate_overall(self.module)
 
+    def test_chains(self, entity_prefix, rel_prefix, relation_id):
+        self.module.load_state_dict(th.load(self.model_filepath, map_location=self.device))
+        self.module.to(self.device)
+        self.module.eval()
+        return self.evaluator.evaluate_chains_return_ranks(self.module, entity_prefix, rel_prefix, relation_id)
+
+    
 if __name__ == "__main__":
     main()

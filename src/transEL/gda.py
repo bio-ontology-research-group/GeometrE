@@ -281,7 +281,8 @@ class GeometricELModel(EmbeddingELModel):
         curr_tolerance = tolerance
 
         optimizer = th.optim.Adam(self.module.parameters(), lr=self.learning_rate)
-        criterion = nn.BCELoss()
+        # criterion = nn.BCELoss()
+        criterion_bpr = nn.LogSigmoid()
         # criterion = nn.MSELoss()
         best_mrr = 0
         best_mr = float("inf")
@@ -305,6 +306,7 @@ class GeometricELModel(EmbeddingELModel):
                 loss = 0
                 batch_data = batch_data.to(self.device)
                 pos_logits = self.tbox_forward(batch_data, "gci2")
+                loss += - criterion_bpr(self.loss_margin - pos_logits).mean()
                 # pos_logits = self.tbox_forward(batch_data, "gci0")
                 neg_idxs = th.randint(0, len(gene_classes), (len(batch_data),), device=self.device)
                 neg_idxs = gene_ids[neg_idxs]
@@ -314,9 +316,10 @@ class GeometricELModel(EmbeddingELModel):
                 neg_logits = self.tbox_forward(neg_batch, "gci2", neg=True)
                 # neg_logits = self.tbox_forward(neg_batch, "gci0", neg=True)
 
-                pos_logits = 1 - th.exp(-pos_logits)
-                neg_logits = 1 - th.exp(-neg_logits)
-                loss += criterion(pos_logits, th.zeros_like(pos_logits)) + criterion(neg_logits, th.ones_like(neg_logits))
+                # pos_logits = 1 - th.exp(-pos_logits)
+                # neg_logits = 1 - th.exp(-neg_logits)
+                # loss += criterion(pos_logits, th.zeros_like(pos_logits)) + criterion(neg_logits, th.ones_like(neg_logits))
+                loss += - criterion_bpr(neg_logits - self.loss_margin).mean()
                 
                 for gci_name, gci_dl in dls.items():
                     if gci_name == "gci2":
@@ -332,8 +335,9 @@ class GeometricELModel(EmbeddingELModel):
                     batch_data = batch_data.to(self.device)
 
                     pos_logits = self.tbox_forward(batch_data, gci_name)
-                    pos_logits = 1 - th.exp(-pos_logits)
-                    loss += criterion(pos_logits, th.zeros_like(pos_logits))
+                    # pos_logits = 1 - th.exp(-pos_logits)
+                    loss += - criterion_bpr(self.loss_margin - pos_logits).mean()
+                    # loss += criterion(pos_logits, th.zeros_like(pos_logits))
                     
                     if gci_name != "gci1_bot":
                         neg_idxs = th.randint(0, num_classes, (len(batch_data),), device=self.device)
@@ -344,9 +348,9 @@ class GeometricELModel(EmbeddingELModel):
 
                         neg_logits = self.tbox_forward(neg_batch, gci_name, neg=True)
                                                                                 
-                        neg_logits = 1 - th.exp(-neg_logits)
-                        loss += criterion(neg_logits, th.ones_like(neg_logits))
-
+                        # neg_logits = 1 - th.exp(-neg_logits)
+                        # loss += criterion(neg_logits, th.ones_like(neg_logits))
+                        loss += - criterion_bpr(neg_logits - self.loss_margin).mean()
 
                 if self.transitive:
                     loss += self.module.regularization_loss()

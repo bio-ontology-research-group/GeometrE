@@ -2,6 +2,8 @@ from mowl.projection import TaxonomyProjector, TaxonomyWithRelationsProjector, E
 from mowl.utils.data import FastTensorDataLoader
 import torch as th
 from tqdm import tqdm
+import os
+import pandas as pd
 import numpy as np
 from org.semanticweb.owlapi.model.parameters import Imports
 from org.semanticweb.owlapi.model import AxiomType as Ax
@@ -706,9 +708,11 @@ class RelationEvaluator(Evaluator):
 
 
 class RelationKGEvaluator(Evaluator):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, data_root, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._test_trans_only_tuples = None
+        self.data_root = data_root
+        
     @property
     def test_only_transitive_tuples(self):
         if self._test_trans_only_tuples is None:
@@ -752,7 +756,8 @@ class RelationKGEvaluator(Evaluator):
         
         return th.tensor(edges_indexed, dtype=th.long)
         
-
+        
+    
 
     def get_filtering_labels(self, num_heads, num_tails, relation_id=-1):
 
@@ -1031,6 +1036,213 @@ class RelationKGEvaluator(Evaluator):
                                                 
         return ranks, franks
 
+    def evaluate_chains(self, model, entity_prefix, rel_prefix):
+
+        chain_file = os.path.join(self.data_root, "chains.txt")
+
+        test_data = pd.read_csv(chain_file, sep="\t", header=None, dtype=str)
+        test_data.columns = ["relation", "head", "tail", "next_tail"]
+
+        class_str2owl = self.dataset.classes.to_dict()
+        class_owl2idx = self.dataset.classes.to_index_dict()
+
+        rel_str2owl = self.dataset.object_properties.to_dict()
+        rel_owl2idx = self.dataset.object_properties.to_index_dict()
+
+        data_indexed = []
+        for i, row in test_data.iterrows():
+
+            relation = rel_prefix + row["relation"]
+            relation = rel_owl2idx[rel_str2owl[relation]]
+
+            head = entity_prefix + str(row["head"])
+            tail = entity_prefix + str(row["tail"])
+            next_tail = entity_prefix + str(row["next_tail"])
+
+            head = class_owl2idx[class_str2owl[head]]
+            tail = class_owl2idx[class_str2owl[tail]]
+            next_tail = class_owl2idx[class_str2owl[next_tail]]
+            
+            data_indexed.append((relation, head, tail, next_tail))
+
+        data_indexed = th.tensor(data_indexed, dtype=th.long)
+                                               
+        dataloader = FastTensorDataLoader(data_indexed, batch_size=self.batch_size, shuffle=False)
+
+        all_logits = []
+        for batch, in dataloader:
+            batch = batch.to(self.device)
+            
+            rel = batch[:, 0].unsqueeze(1)
+            head = batch[:, 1].unsqueeze(1)
+            tail = batch[:, 2].unsqueeze(1)
+            next_tail = batch[:, 3].unsqueeze(1)
+
+            train_triple = th.cat([head, rel, tail], dim=1)
+
+            assert len(train_triple) == len(batch), f"Length of train triple: {len(train_triple)} does not match batch length: {len(batch)}"
+            
+            test_triple = th.cat([tail, rel, next_tail], dim=1)
+            extra_triple = th.cat([head, rel, next_tail], dim=1)
+
+            all_triples = th.cat([train_triple, test_triple, extra_triple], dim=0)
+
+            if return_scores:
+                logits = model(all_triples, "gci2").view(-1, 3).detach().cpu().numpy().tolist()
+                assert len(logits) == len(batch), f"Length of logits: {len(logits)} does not match batch length: {len(batch)}"
+                for i in range(len(logits)):
+                    rel_and_logits = [rel[i].item()] + logits[i]
+                    all_logits.append(rel_and_logits)
+                
+            
+            logits_heads, logits_tails = self.get_logits(model, all_triples, *kwargs)
+
+            
+            
+            
+            
+            # all_logits += logits
+
+        return all_logits
+
+
+    def evaluate_chains_return_ranks(self, model, entity_prefix, rel_prefix, relation_id = -1, **kwargs):
+        if relation_id == -1:
+            raise ValueError("Relation id must be provided for chain evaluation")
+        
+        num_heads, num_tails = len(self.evaluation_heads), len(self.evaluation_tails)
+                            
+        chain_file = os.path.join(self.data_root, "chains.txt")
+
+        test_data = pd.read_csv(chain_file, sep="\t", header=None, dtype=str)
+        test_data.columns = ["relation", "head", "tail", "next_tail"]
+
+        class_str2owl = self.dataset.classes.to_dict()
+        class_owl2idx = self.dataset.classes.to_index_dict()
+
+        rel_str2owl = self.dataset.object_properties.to_dict()
+        rel_owl2idx = self.dataset.object_properties.to_index_dict()
+
+        data_indexed = []
+        for i, row in test_data.iterrows():
+
+            relation = rel_prefix + row["relation"]
+            relation = rel_owl2idx[rel_str2owl[relation]]
+
+            if relation != relation_id:
+                continue
+            
+            head = entity_prefix + str(row["head"])
+            tail = entity_prefix + str(row["tail"])
+            next_tail = entity_prefix + str(row["next_tail"])
+
+            head = class_owl2idx[class_str2owl[head]]
+            tail = class_owl2idx[class_str2owl[tail]]
+            next_tail = class_owl2idx[class_str2owl[next_tail]]
+            
+            data_indexed.append((relation, head, tail, next_tail))
+
+        data_indexed = th.tensor(data_indexed, dtype=th.long)
+
+        dataloader = FastTensorDataLoader(data_indexed, batch_size=self.batch_size, shuffle=False)
+        
+        metrics = dict()
+
+        final_ranks = list()
+        # ranks, franks = dict(), dict()
+
+        deductive_labels = self.get_deductive_labels(num_heads, num_tails, relation_id = relation_id, **kwargs).to(self.device)
+        filtering_labels = self.get_filtering_labels(num_heads, num_tails, relation_id = relation_id, **kwargs)
+
+        self.evaluation_heads = self.evaluation_heads.to(self.device)
+        self.evaluation_tails = self.evaluation_tails.to(self.device)
+        
+        with th.no_grad():
+            for batch, in dataloader: #tqdm(dataloader):
+                batch = batch.to(self.device)
+
+                rel = batch[:, 0].unsqueeze(1)
+                head = batch[:, 1].unsqueeze(1)
+                tail = batch[:, 2].unsqueeze(1)
+                next_tail = batch[:, 3].unsqueeze(1)
+
+                train_triples = th.cat([head, rel, tail], dim=1)
+                assert len(train_triples) == len(batch), f"Length of train triples: {len(train_triples)} does not match batch length: {len(batch)}"
+
+                test_triples = th.cat([tail, rel, next_tail], dim=1)
+                extra_triples = th.cat([head, rel, next_tail], dim=1)
+
+                aux_heads = th.cat([head, tail, head], dim=0).squeeze()
+                tails = th.cat([tail, next_tail, next_tail], dim=0).squeeze()
+                
+                 
+                logits_heads_train, _ = self.get_logits(model, train_triples, *kwargs)
+                logits_heads_test, _ = self.get_logits(model, test_triples, *kwargs)
+                logits_heads_extra, _ = self.get_logits(model, extra_triples, *kwargs)
+
+                all_logits = th.cat([logits_heads_train, logits_heads_test, logits_heads_extra], dim=0)
+                
+                batch_ranks = list()
+                
+                for i, head in enumerate(aux_heads):
+                    tail = tails[i]
+
+                    perm = th.randperm(num_tails)
+                    tail = th.where(self.evaluation_tails[perm] == tail)[0].item()
+                    head_perm = th.where(self.evaluation_heads[perm] == head)[0].item()
+                    
+                    preds = all_logits[i][perm]
+                    preds[head_perm] = 10000
+
+                    ded_labels = deductive_labels[head][perm].to(preds.device)
+                    ded_labels[tail] = 1
+                    ded_labels[head_perm] = 1
+                    # preds = preds * ded_labels
+
+                    
+                    order = th.argsort(preds, descending=False)
+                    rank = th.where(order == tail)[0].item() + 1
+                                        
+                    # if mode == "test":
+                        # filtering = filtering_labels[head][perm].to(preds.device)
+                        
+                        # if self.evaluate_with_deductive_closure:
+                            # ded_labels = deductive_labels[head][perm].to(preds.device)
+                            # all_filtering = th.max(filtering, ded_labels)
+                            
+                        # else:
+                            # ded_labels = deductive_labels[head][perm].to(preds.device)
+                            # all_filtering = th.max(filtering, ded_labels)
+                            
+                        # all_filtering[tail] = 1
+                        # all_filtering[head_perm] = 1
+                        # f_preds = preds * all_filtering
+
+                        # f_order = th.argsort(f_preds, descending=False)
+                        # f_rank = th.where(f_order == tail)[0].item() + 1
+                        # assert f_rank <= rank, f"Rank: {rank}, F-Rank: {f_rank}"
+                    
+                                                                
+                                                                
+                    # if mode == "test":
+                        # if f_rank not in franks:
+                            # franks[f_rank] = 0
+                        # franks[f_rank] += 1
+
+                    batch_ranks.append(rank)
+
+                batch_ranks = th.tensor(batch_ranks, dtype=th.long).reshape(-1, 3)
+                assert len(batch_ranks) == len(batch), f"Length of batch ranks: {len(batch_ranks)} does not match batch length: {len(batch)}"
+
+                final_ranks += batch_ranks.tolist()
+
+            
+        return final_ranks
+
+
+
+
+    
     def evaluate_by_property(self, model, transitive_properties):
         model.eval()
         metrics = self.evaluate_overall(model, relations_to_evaluate=transitive_properties, mode="test")
