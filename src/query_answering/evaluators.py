@@ -154,9 +154,13 @@ class BaseRankingEvaluator():
                 anchor_node = anchor_nodes[i]
                 easy_batch_answers = list(easy_answers[idx])
                 hard_batch_answers = list(hard_answers[idx])
+                assert(len(set(easy_batch_answers)) == len(easy_batch_answers), "Easy answers must be unique.")
+                assert(len(set(hard_batch_answers)) == len(hard_batch_answers), "Hard answers must be unique.")
                 all_answers = easy_batch_answers + hard_batch_answers
-                assert set(easy_batch_answers) & set(hard_batch_answers) == set(), "Easy and hard answers must be disjoint."
-
+                
+                # assert set(easy_batch_answers) & set(hard_batch_answers) == set(), "Easy and hard answers must be disjoint."
+                all_answers = list(set(all_answers))
+                
                 num_samples += len(hard_batch_answers)
                 
                 logger.debug("Number of hard answers: %d", len(hard_batch_answers))
@@ -183,10 +187,12 @@ class BaseRankingEvaluator():
                 f_target_scores = f_preds[idx_dim_0, hard_batch_answers].unsqueeze(1)
                 logger.debug(f"Target scores shape: {target_scores.shape}.")
                 logger.debug(f"Filtered target scores shape: {f_target_scores.shape}.")
+                logger.debug(f"Target scores: {target_scores}.")
                 batch_ranks = (preds <= target_scores).sum(dim=1)
                 batch_f_ranks = (f_preds <= target_scores).sum(dim=1)
-                assert (batch_ranks > 0).all(), "All ranks should be greater than 0."
+                assert (batch_ranks > 0).all(), f"All ranks should be greater than 0. Min rank: {batch_ranks.min()}."
                 assert (batch_f_ranks > 0).all(), "All filtered ranks should be greater than 0."
+                assert (batch_ranks >= batch_f_ranks).all(), "Filtered ranks should be less than or equal to ranks."
                 
                 mr += batch_ranks.sum().item()
                 mrr += (1 / batch_ranks).sum().item()

@@ -2,13 +2,12 @@ import click as ck
 import pickle as pkl
 from util import FastTensorDataLoader, seed_everything
 from box import Box
-import numpy as np
 import torch as th
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import os
 from itertools import cycle
-from dataloader import TrainDataset, TestDataset, SingledirectionalOneShotIterator
+from fast_dataloader import construct_train_dataset, TestDataset, FastTensorWithNegativesDataLoader
 from module import ELBEQAModule
 from tqdm import tqdm
 from evaluators import QAEvaluator
@@ -47,12 +46,9 @@ all_tasks = list(query_name_dict.keys()) # ['1p', '2p', '3p', '2i', '3i', 'ip', 
 def collate_fn(batch):
     init, pos_tail, neg_tails, subsampling_weights = zip(*batch)
 
-    init = th.tensor(np.array(init))
-    # init = th.vstack(init)
-    pos_tail = th.tensor(np.array(pos_tail)).unsqueeze(1)
-    # pos_tail = th.hstack(pos_tail).unsqueeze(1)
-    neg_tails = th.tensor(np.array(neg_tails))
-    # neg_tails = th.vstack(neg_tails)
+    init = th.vstack(init)
+    pos_tail = th.hstack(pos_tail).unsqueeze(1)
+    neg_tails = th.vstack(neg_tails)
     subsampling_weights = th.hstack(subsampling_weights).unsqueeze(1)
     logger.debug(f"init: {init.shape}, pos_tail: {pos_tail.shape}, neg_tails: {neg_tails.shape}")
     
@@ -112,16 +108,27 @@ def load_data(data_path):
     train_queries = pkl.load(open(os.path.join(data_path, "train-queries.pkl"), 'rb'))
     train_answers = pkl.load(open(os.path.join(data_path, "train-answers.pkl"), 'rb'))
     valid_queries = pkl.load(open(os.path.join(data_path, "valid-queries.pkl"), 'rb'))
-    valid_hard_answers = pkl.load(open(os.path.join(data_path, "valid-hard-answers.pkl"), 'rb'))
-    valid_easy_answers = pkl.load(open(os.path.join(data_path, "valid-easy-answers.pkl"), 'rb'))
-    test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
-    test_hard_answers = pkl.load(open(os.path.join(data_path, "test-hard-answers.pkl"), 'rb'))
-    test_easy_answers = pkl.load(open(os.path.join(data_path, "test-easy-answers.pkl"), 'rb'))
-    
+    saturated_data = True
+    if saturated_data:
+        valid_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-easy-answers.pkl"), 'rb'))
+        test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
+        test_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-test-easy-answers.pkl"), 'rb'))
+
+    else:
+        valid_hard_answers = pkl.load(open(os.path.join(data_path, "valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pkl.load(open(os.path.join(data_path, "valid-easy-answers.pkl"), 'rb'))
+        test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
+        test_hard_answers = pkl.load(open(os.path.join(data_path, "test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pkl.load(open(os.path.join(data_path, "test-easy-answers.pkl"), 'rb'))
+
     # remove tasks not in args.tasks
 
     allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in", "inp", "pin", "pni"]
-    allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in"]
+    # allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in"]
+    # allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in"]
+    allowed_tasks = ["1p"]
     for name in all_tasks:
         short_name = query_name_dict[name]
         if short_name not in allowed_tasks:
@@ -181,7 +188,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
 
     
     entities_tensor = th.arange(nentity).to(device)
-    evaluator = QAEvaluator(entities_tensor, 85, device)
+    evaluator = QAEvaluator(entities_tensor, 70, device)
 
     # train_dataloader = DataLoader(TrainDatasetOld(train_queries, nentity, nrelation, num_negs, train_answers),
                                   # batch_size=batch_size,
@@ -191,81 +198,81 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
                                   # )
     
     
-    train_dataset_1p = TrainDataset(train_queries['1p'], train_answers['1p'], nentity, num_negs)
-    train_dataset_2p = TrainDataset(train_queries['2p'], train_answers['2p'], nentity, num_negs)
-    train_dataset_3p = TrainDataset(train_queries['3p'], train_answers['3p'], nentity, num_negs)
-    train_dataset_2i = TrainDataset(train_queries['2i'], train_answers['2i'], nentity, num_negs)
-    train_dataset_3i = TrainDataset(train_queries['3i'], train_answers['3i'], nentity, num_negs)
-    train_dataset_2in = TrainDataset(train_queries['2in'], train_answers['2in'], nentity, num_negs)
-    train_dataset_3in = TrainDataset(train_queries['3in'], train_answers['3in'], nentity, num_negs)
-    # train_dataset_inp = TrainDataset(train_queries['inp'], train_answers['inp'], nentity, num_negs)
-    # train_dataset_pin = TrainDataset(train_queries['pin'], train_answers['pin'], nentity, num_negs)
-    # train_dataset_pni = TrainDataset(train_queries['pni'], train_answers['pni'], nentity, num_negs)
-
-    num_workers = 16 #8
-    train_dataloader_1p = DataLoader(train_dataset_1p, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers)
-    train_dataloader_2p = cycle(DataLoader(train_dataset_2p, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    train_dataloader_3p = cycle(DataLoader(train_dataset_3p, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    train_dataloader_2i = cycle(DataLoader(train_dataset_2i, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    train_dataloader_3i = cycle(DataLoader(train_dataset_3i, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    train_dataloader_2in = cycle(DataLoader(train_dataset_2in, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    train_dataloader_3in = cycle(DataLoader(train_dataset_3in, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    # train_dataloader_inp = cycle(DataLoader(train_dataset_inp, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    # train_dataloader_pin = cycle(DataLoader(train_dataset_pin, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-    # train_dataloader_pni = cycle(DataLoader(train_dataset_pni, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers))
-
+    train_dataset_1p = construct_train_dataset(train_queries['1p'], train_answers['1p'])
+    # train_dataset_2p = construct_train_dataset(train_queries['2p'], train_answers['2p'])
+    # train_dataset_3p = construct_train_dataset(train_queries['3p'], train_answers['3p'])
+    # train_dataset_2i = construct_train_dataset(train_queries['2i'], train_answers['2i'])
+    # train_dataset_3i = construct_train_dataset(train_queries['3i'], train_answers['3i'])
+    # train_dataset_2in = construct_train_dataset(train_queries['2in'], train_answers['2in'])
+    # train_dataset_3in = construct_train_dataset(train_queries['3in'], train_answers['3in'])
+    # train_dataset_inp = construct_train_dataset(train_queries['inp'], train_answers['inp'])
+    # train_dataset_pin = construct_train_dataset(train_queries['pin'], train_answers['pin'])
+    # train_dataset_pni = construct_train_dataset(train_queries['pni'], train_answers['pni'])
     
-    dataloaders = {"2p": train_dataloader_2p, "3p": train_dataloader_3p,
-                   "2i": train_dataloader_2i, "3i": train_dataloader_3i,
-                   "2in": train_dataloader_2in, "3in": train_dataloader_3in,
+    train_dataloader_1p = FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_1p, batch_size=batch_size, shuffle=True)
+    # train_dataloader_2p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2p, batch_size=batch_size, shuffle=True))
+    # train_dataloader_3p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3p, batch_size=batch_size, shuffle=True))
+    # train_dataloader_2i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2i, batch_size=batch_size, shuffle=True))
+    # train_dataloader_3i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3i, batch_size=batch_size, shuffle=True))
+    # train_dataloader_2in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2in, batch_size=batch_size, shuffle=True))
+    # train_dataloader_3in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3in, batch_size=batch_size, shuffle=True))
+    # train_dataloader_inp = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_inp, batch_size=batch_size, shuffle=True))
+    # train_dataloader_pin = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pin, batch_size=batch_size, shuffle=True))
+    # train_dataloader_pni = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pni, batch_size=batch_size, shuffle=True))
+
+
+    dataloaders = dict()
+    # dataloaders = {"2p": train_dataloader_2p, "3p": train_dataloader_3p,
+                   # "2i": train_dataloader_2i, "3i": train_dataloader_3i,
+                   # "2in": train_dataloader_2in, "3in": train_dataloader_3in,
                    # "inp": train_dataloader_inp, "pin": train_dataloader_pin, "pni": train_dataloader_pni
-                   }
+                   # }
 
     valid_dataset_1p = TestDataset(valid_queries['1p'], valid_easy_answers['1p'], valid_hard_answers['1p'])
-    valid_dataset_2p = TestDataset(valid_queries['2p'], valid_easy_answers['2p'], valid_hard_answers['2p'])
-    valid_dataset_3p = TestDataset(valid_queries['3p'], valid_easy_answers['3p'], valid_hard_answers['3p'])
-    valid_dataset_2i = TestDataset(valid_queries['2i'], valid_easy_answers['2i'], valid_hard_answers['2i'])
-    valid_dataset_3i = TestDataset(valid_queries['3i'], valid_easy_answers['3i'], valid_hard_answers['3i'])
-    valid_dataset_2in = TestDataset(valid_queries['2in'], valid_easy_answers['2in'], valid_hard_answers['2in'])
-    valid_dataset_3in = TestDataset(valid_queries['3in'], valid_easy_answers['3in'], valid_hard_answers['3in'])
-    valid_dataset_pi = TestDataset(valid_queries['pi'], valid_easy_answers['pi'], valid_hard_answers['pi'])
-    valid_dataset_ip = TestDataset(valid_queries['ip'], valid_easy_answers['ip'], valid_hard_answers['ip'])
-    valid_dataset_inp = TestDataset(valid_queries['inp'], valid_easy_answers['inp'], valid_hard_answers['inp'])
-    valid_dataset_pin = TestDataset(valid_queries['pin'], valid_easy_answers['pin'], valid_hard_answers['pin'])
-    valid_dataset_pni = TestDataset(valid_queries['pni'], valid_easy_answers['pni'], valid_hard_answers['pni'])
+    # valid_dataset_2p = TestDataset(valid_queries['2p'], valid_easy_answers['2p'], valid_hard_answers['2p'])
+    # valid_dataset_3p = TestDataset(valid_queries['3p'], valid_easy_answers['3p'], valid_hard_answers['3p'])
+    # valid_dataset_2i = TestDataset(valid_queries['2i'], valid_easy_answers['2i'], valid_hard_answers['2i'])
+    # valid_dataset_3i = TestDataset(valid_queries['3i'], valid_easy_answers['3i'], valid_hard_answers['3i'])
+    # valid_dataset_2in = TestDataset(valid_queries['2in'], valid_easy_answers['2in'], valid_hard_answers['2in'])
+    # valid_dataset_3in = TestDataset(valid_queries['3in'], valid_easy_answers['3in'], valid_hard_answers['3in'])
+    # valid_dataset_pi = TestDataset(valid_queries['pi'], valid_easy_answers['pi'], valid_hard_answers['pi'])
+    # valid_dataset_ip = TestDataset(valid_queries['ip'], valid_easy_answers['ip'], valid_hard_answers['ip'])
+    # valid_dataset_inp = TestDataset(valid_queries['inp'], valid_easy_answers['inp'], valid_hard_answers['inp'])
+    # valid_dataset_pin = TestDataset(valid_queries['pin'], valid_easy_answers['pin'], valid_hard_answers['pin'])
+    # valid_dataset_pni = TestDataset(valid_queries['pni'], valid_easy_answers['pni'], valid_hard_answers['pni'])
     
-    valid_datasets = {"1p": valid_dataset_1p, "2p": valid_dataset_2p, "3p": valid_dataset_3p,
-                      "2i": valid_dataset_2i, "3i": valid_dataset_3i,
-                      "2in": valid_dataset_2in, "3in": valid_dataset_3in,
-                      "pi": valid_dataset_pi, "ip": valid_dataset_ip,
-                      "inp": valid_dataset_inp, "pin": valid_dataset_pin, "pni": valid_dataset_pni
+    valid_datasets = {"1p": valid_dataset_1p, #"2p": valid_dataset_2p, "3p": valid_dataset_3p,
+                      # "2i": valid_dataset_2i, "3i": valid_dataset_3i,
+                      # "2in": valid_dataset_2in, "3in": valid_dataset_3in,
+                      # "pi": valid_dataset_pi, "ip": valid_dataset_ip,
+                      # "inp": valid_dataset_inp, "pin": valid_dataset_pin, "pni": valid_dataset_pni
                       }
 
     test_dataset_1p = TestDataset(test_queries['1p'], test_easy_answers['1p'], test_hard_answers['1p'])
-    test_dataset_2p = TestDataset(test_queries['2p'], test_easy_answers['2p'], test_hard_answers['2p'])
-    test_dataset_3p = TestDataset(test_queries['3p'], test_easy_answers['3p'], test_hard_answers['3p'])
-    test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
-    test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
-    test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
-    test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
-    test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
-    test_dataset_ip = TestDataset(test_queries['ip'], test_easy_answers['ip'], test_hard_answers['ip'])
-    test_dataset_inp = TestDataset(test_queries['inp'], test_easy_answers['inp'], test_hard_answers['inp'])
-    test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
-    test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
+    # test_dataset_2p = TestDataset(test_queries['2p'], test_easy_answers['2p'], test_hard_answers['2p'])
+    # test_dataset_3p = TestDataset(test_queries['3p'], test_easy_answers['3p'], test_hard_answers['3p'])
+    # test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
+    # test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
+    # test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
+    # test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
+    # test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
+    # test_dataset_ip = TestDataset(test_queries['ip'], test_easy_answers['ip'], test_hard_answers['ip'])
+    # test_dataset_inp = TestDataset(test_queries['inp'], test_easy_answers['inp'], test_hard_answers['inp'])
+    # test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
+    # test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
 
-    test_datasets = {"1p": test_dataset_1p, "2p": test_dataset_2p, "3p": test_dataset_3p,
-                     "2i": test_dataset_2i, "3i": test_dataset_3i,
-                     "2in": test_dataset_2in, "3in": test_dataset_3in,
-                     "pi": test_dataset_pi, "ip": test_dataset_ip,
-                     "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
+    test_datasets = {"1p": test_dataset_1p, #"2p": test_dataset_2p, "3p": test_dataset_3p,
+                     # "2i": test_dataset_2i, "3i": test_dataset_3i,
+                     # "2in": test_dataset_2in, "3in": test_dataset_3in,
+                     # "pi": test_dataset_pi, "ip": test_dataset_ip,
+                     # "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
                      }
     
 
     transitive_dataset_roles = transitive_roles[dataset_name]
     logger.info(f"Transitive roles: {transitive_dataset_roles}")
-    # transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
-    transitive_ids = None
+    transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
+    # transitive_ids = None
     
     model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=margin).to(device)
 
@@ -282,6 +289,8 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
     with tqdm(range(1000)) as pbar:
         for epoch in tqdm(range(1000)):
             epoch_loss = 0
+            epoch_trans_score = 0
+            epoch_non_trans_score = 0
             prev_pos_loss = curr_pos_loss
             prev_neg_loss = curr_neg_loss
             curr_pos_loss = 0
@@ -305,107 +314,90 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
 
 
             for batch_data in tqdm(train_dataloader_1p, leave=False):
-                init, pos_tail, neg_tails, subsampling_weights = batch_data
-                # batch_queries, pos_tail, neg_tails, subsampling_weights, query_structures = batch_data
-                # assert pos_tail.shape[0] == neg_tails.shape[0] == subsampling_weights.shape[0], f"Shapes do not match: {pos_tail.shape[0]} != {neg_tails.shape[0]} != {subsampling_weights.shape[0]}"
-                # logger.debug(f"num queries: {len(batch_queries)}")
-                # pos_tail = pos_tail.to(device)
-                # neg_tails = neg_tails.to(device)
-                # subsampling_weights = subsampling_weights.to(device)
-
-                # batch_queries_dict = collections.defaultdict(list)
-                # batch_idxs_dict = collections.defaultdict(list)
-                # batch_inits = collections.defaultdict(list)
-
-                # for i, query in enumerate(batch_queries):  # group queries with same structure
-                    # batch_queries_dict[query_structures[i]].append(query)
-                    # batch_idxs_dict[query_structures[i]].append(i)
-
-                # for query_structure, queries in batch_queries_dict.items():
-                    # logger.debug(f"query structure: {query_structure}. Num queries: {len(queries)}")
-                    # short_name = query_name_dict[query_structure]
-                    # queries = th.tensor(queries).to(device)
-                    # inits = model.get_query_embedding(queries, short_name)
-                    # logger.debug(f"{query_structure} queries inits shape: {inits.center.shape}")
-                    # batch_inits[query_structure] = inits
-
-                # indexed_batch_inits = []
-                # for query_structure in batch_inits:
-                    # logger.debug(f"{query_structure} queries shape: {batch_inits[query_structure].center.shape}")
-                    # indexed_batch_inits += zip(batch_idxs_dict[query_structure], batch_inits[query_structure].center, batch_inits[query_structure].offset)
-                # indexed_batch_inits = sorted(indexed_batch_inits, key=lambda x: x[0])
-
-                # idxs, centers, offsets = zip(*indexed_batch_inits)
-                # logger.debug(f"idxs: {len(idxs)}, centers: {len(centers)}, offsets: {len(offsets)}")
-                # centers = th.vstack(centers)
-                # offsets = th.vstack(offsets)
-                # logger.debug(f"query centers: {centers.shape}, query offsets: {offsets.shape}")
-                # query_boxes = Box(centers, offsets)
-
-                # tail_center = model.class_embed(pos_tail)
-                # tail_offset = th.abs(model.class_offset(pos_tail))
-                # logger.debug(f"tail_center: {tail_center.shape}, tail_offset: {tail_offset.shape}")
-                # tail_box = Box(tail_center, tail_offset, normalize=True)
-
-                # pos_logits = Box.box_inclusion_score(query_boxes, tail_box, margin)
-                # logger.debug(f"pos_logits: {pos_logits.shape}")
-
-                # tail_center = model.class_embed(neg_tails)
-                # tail_offset = th.abs(model.class_offset(neg_tails))
-                # logger.debug(f"tail_center: {tail_center.shape}, tail_offset: {tail_offset.shape}")
-                # tail_box = Box(tail_center, tail_offset, normalize=True)
-                # neg_logits = Box.box_inclusion_score(query_boxes, tail_box, margin)
-                # logger.debug(f"neg_logits: {neg_logits.shape}")
-
-
+                init, pos_tail, subsampling_weights, neg_tails = batch_data
+                
                 init = init.to(device)
                 pos_tail = pos_tail.to(device)
                 neg_tails = neg_tails.to(device)
+                neg_tails = th.randint(0, nentity, neg_tails.shape, device=device)
                 subsampling_weights = subsampling_weights.to(device)
 
 
                 loss = 0 
-                                                                                                
-                pos_logits = model(init, pos_tail, "1p")
+
+                logger.debug(f"\n\n\nEntering pos logits")
+                pos_logits = model(init, pos_tail, "1p").unsqueeze(1)
+                logger.debug(f"\n\n\nEntering neg logits")
                 neg_logits = model(init, neg_tails, "1p")
 
+                loss_margin = 1 #0.01 #20 #10
+                loss_1p = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
+                if transitive_ids is not None:
+                    r = init[:, -1]
+                    mask = th.isin(r, transitive_ids)
+
+                    trans_factor = 5
+                    loss_1p[mask] = trans_factor * loss_1p[mask]
+                    
+                    trans_logits_pos = pos_logits[mask].mean()
+                    non_trans_logits_pos = pos_logits[~mask].mean()
+                    trans_logits_neg = neg_logits[mask].mean()
+                    non_trans_logits_neg = neg_logits[~mask].mean()
+                    logger.debug(f"Trans logits. Pos: {trans_logits_pos}, Neg: {trans_logits_neg}")
+                    logger.debug(f"Non Trans logits. Pos: {non_trans_logits_pos}, Neg: {non_trans_logits_neg}")
                 
+            
+                    
+                    trans_loss = loss_1p[mask].sum()/subsampling_weights[mask].sum()
+                    non_trans_loss = loss_1p[~mask].sum()/subsampling_weights[~mask].sum()
+                    logger.debug(f"Loss. Trans: {trans_loss}, Non Trans: {non_trans_loss}")
 
-                loss_margin = 20 #10
-                pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
-                logger.debug(f"Pos logits: {pos_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
-                logger.debug(f"Neg logits: {neg_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
-                neg_loss = - F.logsigmoid(neg_logits - loss_margin) * subsampling_weights.unsqueeze(1)
-
-                pos_loss = pos_loss.sum()/subsampling_weights.sum()
-                neg_loss = neg_loss.sum()/subsampling_weights.sum()
-                curr_pos_loss += pos_loss.item()
-                curr_neg_loss += neg_loss.item()
-                loss += pos_loss + neg_loss
+                
+                loss += loss_1p.sum()/subsampling_weights.sum() 
+                
+                
+                # pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
+                # logger.debug(f"Pos logits: {pos_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
+                # logger.debug(f"Neg logits: {neg_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
+                # neg_loss = - F.logsigmoid(neg_logits - loss_margin) * subsampling_weights#.unsqueeze(1)
+                # logger.debug(f"Pos loss: {pos_loss.shape} - Neg loss: {neg_loss.shape}")
+                # pos_loss = pos_loss.sum()/subsampling_weights.sum()
+                # neg_loss = neg_loss.sum()/subsampling_weights.sum()
+                # curr_pos_loss += pos_loss.item()
+                # curr_neg_loss += neg_loss.item()
+                # loss += pos_loss + neg_loss
 
                 for task_name, dataloader in dataloaders.items():
 
-                    init, pos_tail, neg_tails, subsampling_weights = next(dataloader)
+                    init, pos_tail, subsampling_weights, neg_tails = next(dataloader)
                     init = init.to(device)
                     pos_tail = pos_tail.to(device)
                     neg_tails = neg_tails.to(device)
                     subsampling_weights = subsampling_weights.to(device)
 
-
-                    pos_logits = model(init, pos_tail, task_name)
+                    pos_logits = model(init, pos_tail, task_name).unsqueeze(1)
                     neg_logits = model(init, neg_tails, task_name)
+
                     logger.debug(f"pos_logits: {pos_logits.shape}, neg_logits: {neg_logits.shape}")
                     logger.debug(f"Pos logits: {pos_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
                     logger.debug(f"Neg logits: {neg_logits.shape} - subsampling_weights: {subsampling_weights.shape}")
-                
-                    pos_loss = - F.logsigmoid(margin - pos_logits) * subsampling_weights
-                    neg_loss = - F.logsigmoid(neg_logits - margin) * subsampling_weights.unsqueeze(1)
-                    pos_loss = pos_loss.sum()/subsampling_weights.sum()
-                    neg_loss = neg_loss.sum()/subsampling_weights.sum()
-                    curr_pos_loss += pos_loss.item()
-                    curr_neg_loss += neg_loss.item()    
-                    loss += pos_loss #.sum() / subsampling_weights.sum()
-                    loss += neg_loss #.sum() / subsampling_weights.sum()
+
+                    # if task_name in ["2p", "3p", "inp"]:
+                        # loss_margin = 0.01
+                    # else:
+                        # loss_margin = 0.01 #20 #10
+
+                    loss_task = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
+                    loss += loss_task.sum()/subsampling_weights.sum()
+
+                    # pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
+                    # neg_loss = - F.logsigmoid(neg_logits - loss_margin) * subsampling_weights#.unsqueeze(1)
+                    # pos_loss = pos_loss.sum()/subsampling_weights.sum()
+                    # neg_loss = neg_loss.sum()/subsampling_weights.sum()
+                    # curr_pos_loss += pos_loss.item()
+                    # curr_neg_loss += neg_loss.item()    
+                    # loss += pos_loss #.sum() / subsampling_weights.sum()
+                    # loss += neg_loss #.sum() / subsampling_weights.sum()
 
 
                 optimizer.zero_grad()
@@ -417,10 +409,11 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
 
             scheduler.step()
             epoch_loss /= len(train_dataloader_1p)
+            epoch_trans_score /= len(train_dataloader_1p)
+            epoch_non_trans_score /= len(train_dataloader_1p)
             curr_pos_loss /= len(train_dataloader_1p)
             curr_neg_loss /= len(train_dataloader_1p)
             pbar.set_description(f"Prev losses: {prev_pos_loss:.4f}, {prev_neg_loss:.4f}. Curr losses: {curr_pos_loss:.4f}, {curr_neg_loss:.4f}")
-            
             if epoch % 10 == 0:
                 # validation_metrics = evaluator.evaluate(model, valid_datasets)
                 # log_to_wandb(validation_metrics, epoch, wandb_logger, "valid")
@@ -429,7 +422,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
                 log_to_wandb(test_metrics, epoch, wandb_logger, "test")
                 test_str = to_str(test_metrics)
 
-                logger.info(f"Epoch {epoch} Loss: {epoch_loss:6f}")
+                logger.info(f"Epoch {epoch}: Loss: {epoch_loss:6f}")
                 # print("\nValidation")
                 # print(valid_str)
                 print("\nTest")

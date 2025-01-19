@@ -12,6 +12,7 @@ from dataloader import TrainDatasetOld, TestDataset, SingledirectionalOneShotIte
 from module import ELBEQAModule
 from tqdm import tqdm
 from evaluators import QAEvaluator
+from util import transitive_roles
 import wandb
 import collections
 import logging
@@ -108,17 +109,17 @@ def load_data(data_path):
     train_queries = pkl.load(open(os.path.join(data_path, "train-queries.pkl"), 'rb'))
     train_answers = pkl.load(open(os.path.join(data_path, "train-answers.pkl"), 'rb'))
     valid_queries = pkl.load(open(os.path.join(data_path, "valid-queries.pkl"), 'rb'))
-    valid_hard_answers = pkl.load(open(os.path.join(data_path, "valid-hard-answers.pkl"), 'rb'))
-    valid_easy_answers = pkl.load(open(os.path.join(data_path, "valid-easy-answers.pkl"), 'rb'))
+    valid_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-hard-answers.pkl"), 'rb'))
+    valid_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-easy-answers.pkl"), 'rb'))
     test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
-    test_hard_answers = pkl.load(open(os.path.join(data_path, "test-hard-answers.pkl"), 'rb'))
-    test_easy_answers = pkl.load(open(os.path.join(data_path, "test-easy-answers.pkl"), 'rb'))
+    test_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-test-hard-answers.pkl"), 'rb'))
+    test_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-test-easy-answers.pkl"), 'rb'))
     
     # remove tasks not in args.tasks
 
     allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in", "inp", "pin", "pni"]
     allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in"]
-    allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi"]
+    allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in"]
     for name in all_tasks:
         short_name = query_name_dict[name]
         if short_name not in allowed_tasks:
@@ -169,6 +170,9 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
         
     train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel = load_data(data_path)
 
+    dataset_name = data_path.split("/")[-1]
+
+    
     nentity = len(ent2id)
     nrelation = len(rel2id)
     logger.info(f"Number of entities: {nentity}. Number of relations: {nrelation}")
@@ -255,8 +259,13 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
                      "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
                      }
     
+
+    transitive_dataset_roles = transitive_roles[dataset_name]
+    logger.info(f"Transitive roles: {transitive_dataset_roles}")
+    transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
+
     
-    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, margin=margin).to(device)
+    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=margin).to(device)
 
     optimizer = th.optim.AdamW(model.parameters(), lr=learning_rate)
     scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
@@ -329,6 +338,8 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
                 pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
                 neg_loss = - F.logsigmoid(neg_logits - loss_margin) * subsampling_weights.unsqueeze(1)
 
+                # pos_loss = pos_loss.mean()
+                # neg_loss = neg_loss.mean()
                 pos_loss = pos_loss.sum()/subsampling_weights.sum()
                 neg_loss = neg_loss.sum()/subsampling_weights.sum()
 

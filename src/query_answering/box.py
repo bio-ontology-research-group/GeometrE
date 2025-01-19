@@ -42,17 +42,13 @@ def check_output_shape(func):
 
 
 class Box():
-    def __init__(self, center, offset, check_shape=True, normalize=False):
+    def __init__(self, center, offset, check_shape=True):
         logger.debug(f"{self.__class__.__name__} center: {center.shape}, offset: {offset.shape}")
         if check_shape:
             assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
         self.center = center
-        if normalize:
-            self.center = self.center / th.norm(self.center, p=2, dim=-1, keepdim=True)
-            
-        self.offset = offset
-        logger.debug(f"{self.__class__.__name__} lower: {self.lower.shape}, upper: {self.upper.shape}")
-
+        self.offset = th.abs(offset)
+        
     @property
     def lower(self):
         return self.center - self.offset
@@ -60,31 +56,33 @@ class Box():
     @property
     def upper(self):
         return self.center + self.offset
-        
-    def translate(self, translation, scaling):
+
+    def slice(self, index_tensor):
+        return Box(self.center[index_tensor], self.offset[index_tensor])
+
+    
+    def translate(self, translation, scaling, transitive_mask=None, r_idxs=None):
+        if transitive_mask is not None:
+            # translation[transitive_mask] = th.zeros_like(translation[transitive_mask]) + 1e-7
+            translation[transitive_mask] = th.abs(translation[transitive_mask]) #/th.norm(translation[transitive_mask], dim=-1).unsqueeze(-1)
+            r_range = th.arange(translation.shape[0], device=translation.device)[transitive_mask]
+            logger.debug(f"r_range: {r_range.shape}, r_idxs: {r_idxs.shape}")
+            mask = th.ones_like(translation)
+            logger.debug(f"In translation: r_idxs: {r_idxs.shape}, mask: {mask.shape}")
+            mask[transitive_mask] = 0
+            mask[r_range, r_idxs] = 1
+            assert mask[transitive_mask].sum() == len(r_idxs), f"Mask sum: {mask[transitive_mask].sum()}, r_idxs: {len(r_idxs)}"
+            
+            # translation[transitive_mask][r_range, r_idxs] = 1e-7
+            # translation = translation * mask
+            non_zero = (translation[transitive_mask] != 0).sum()
+            # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
+            # scaling[transitive_mask] = 1
+            # scaling[r_range, r_idxs] = 1
+            # scaling[transitive_mask] = 1 #th.sigmoid(scaling[transitive_mask]) + 1
         new_center = self.center + translation
         new_offset = self.offset * th.abs(scaling)
-        
         return Box(new_center, new_offset)
-        
-        # if len(self.center.shape) == 3:
-            # r = r.unsqueeze(1)
-
-        # if test:
-            # logger.debug(f"{self.__class__.__name__}-{self.translate.__name__}-Test. center: {self.center.shape}, offset: {self.offset.shape}, r: {r.shape}")
-            # box_bs = self.center.shape[0]
-            # r_bs = r.shape[0]
-            # dim = self.center.shape[-1]
-            # if not box_bs == r_bs:
-                # self.center = self.center.permute(1, 0, 2)
-                # self.offset = self.offset.permute(1, 0, 2).repeat(r_bs, 1, 1)
-                # new_center = (self.center + r) #.reshape(-1, 1, dim)
-            # else:
-                # new_center = self.center + r
-                # logger.debug(f"{self.__class__.__name__}-{self.translate.__name__} r: {r.shape}, center: {self.center.shape}, new_center: {new_center.shape}")
-                # assert new_center.shape == self.center.shape, f"new_center: {new_center.shape}, center: {self.center.shape}"
-        # return Box(new_center, self.offset)
-        
         
     # @check_output_shape
     @staticmethod
@@ -117,43 +115,118 @@ class Box():
         return dst
 
     @staticmethod
-    def box_equiv_score(box_1, box_2, margin):
-        logger.debug(f"{Box.__name__}-{Box.box_inclusion_score.__name__} box_1 center: {box_1.center.shape}, box_2 center: {box_2.center.shape}")
-        logger.debug(f"{Box.__name__}-{Box.box_inclusion_score.__name__} box_1 offset: {box_1.offset.shape}, box_2 offset: {box_2.offset.shape}")
+    def box_order_score(box_1, box_2, margin, r_trans, transitive_mask, r_idxs):
+        logger.debug(f"{Box.__name__}-{Box.box_order_score.__name__} box_1 center: {box_1.center.shape}, box_2 center: {box_2.center.shape}, r_trans: {r_trans.shape}")
+
+        r_trans = th.abs(r_trans)
+
+        # r_trans_sum = th.sum(r_trans, dim=-1)
+        # ones_like_r = th.ones_like(r_trans_sum)
+        # assert th.allclose(r_trans_sum, ones_like_r), f"Sum in r_trans: {r_trans_sum.sum()} not equal to sum in ones: {ones_like_r.sum()}"
+
         
         if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
             box_1.center = box_1.center.unsqueeze(1)
             box_1.offset = box_1.offset.unsqueeze(1)
-            # box_1.lower = box_1.lower.unsqueeze(1)
-            # box_1.upper = box_1.upper.unsqueeze(1)
-            
+            r_trans = r_trans.unsqueeze(1)
+                        
         box_1_bs, *_ = box_1.center.shape
         box_2_bs, *_ = box_2.center.shape
 
         if box_1_bs != box_2_bs:
             box_2.center = box_2.center.permute(1, 0, 2)
             box_2.offset = box_2.offset.permute(1, 0, 2)
-            # box_2.lower = box_2.lower.permute(1, 0, 2)
-            # box_2.upper = box_2.upper.permute(1, 0, 2)
-            
-        logger.debug(f"box_1: {box_1.center.shape}, box_2: {box_2.center.shape}")
-        logger.debug(f"box_1: {box_1.offset.shape}, box_2: {box_2.offset.shape}")
+                        
+        # order_loss = th.linalg.norm(th.relu(box_1.center + box_1.offset - box_2.center - box_2.offset + margin), axis=-1)
+        margin = 0.1
+        # order_loss = th.linalg.norm(th.relu(box_1.center + box_2.offset  - box_2.center - box_2.offset + margin), axis=-1)
 
+        # r_range = th.arange(box_1.center.shape[0])
+        # r_trans[r_range, r_idxs] = 1e-7
+        # box_1.center[r_range, r_idxs] = 1e-7
+        # box_1.offset[r_range, r_idxs] = 1e-7
+
+        # mask = th.zeros_like(box_1.center)
+
+        # if len(box_1.center.shape) == 2:
+            # x_range = th.arange(box_1.center.shape[0], device=box_1.center.device)
+            # mask[x_range, r_idxs] = 1
+
+        # elif len(box_1.center.shape) == 3:
+            # x_range = th.arange(box_1.center.shape[0], device=box_1.center.device)
+            # y_range = th.arange(box_1.center.shape[1], device=box_1.center.device)
+            # mask[x_range, y_range, r_idxs] = 1
+
+        # box_1_trans_center = box_1.center * mask
+        # box_1_trans_offset = box_1.offset * mask
+        # non_zero = (box_1_trans_center != 0).sum()
+        # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
+        # non_zero = (box_1_trans_offset != 0).sum()
+        # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
+        # box_1_non_trans_center = box_1.center * (1 - mask)
+        # box_1_non_trans_offset = box_1.offset * (1 - mask)
+
+        # mask = th.zeros_like(box_2.center)
+        # if len(box_2.center.shape) == 2:
+            # x_range = th.arange(box_2.center.shape[0])
+            # mask[x_range, r_idxs] = 1
+            
+        # elif len(box_2.center.shape) == 3:
+            # x_range = th.arange(box_2.center.shape[0])
+            # logger.debug(f"r_idxs: {r_idxs.shape}. Mask: {mask.shape}")
+            # logger.debug(f"x_range: {x_range.shape}, y_range: {y_range.shape}, r_idxs: {r_idxs.shape}")
+            # mask[x_range, :, r_idxs] = 1
+            
+        # box_2_trans_center = box_2.center * mask
+        # box_2_trans_offset = box_2.offset * mask
+        # box_2_non_trans_center = box_2.center * (1 - mask)
+        # box_2_non_trans_offset = box_2.offset * (1 - mask)
+
+        # non_trans_center_loss = th.linalg.norm(box_1_non_trans_center - box_2_non_trans_center, dim=-1, ord=2)
+        # non_trans_offset_loss = th.linalg.norm(box_1_non_trans_offset - box_2_non_trans_offset, dim=-1, ord=2)
+        
+        # margin = 2
+        # trans_loss = th.linalg.norm(th.relu(box_1_trans_center + box_1_trans_offset - box_2_trans_center - box_2_trans_offset + margin), axis=-1, ord=2)
+        # logger.debug(f"Non trans center loss: {non_trans_center_loss.mean()}. Non trans offset loss: {non_trans_offset_loss.mean()}. Trans loss: {trans_loss.mean()}")
+        
+        # order_loss = non_trans_center_loss + non_trans_offset_loss + trans_loss
+
+        order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
+        
+        # order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.lower + margin), axis=-1) original one
+        # lower_loss = th.linalg.norm(box_1.lower - box_2.lower + margin, axis=-1)
+        # order_margin = margin
+        # order_loss = th.linalg.norm(th.relu(box_1.center - box_2.center + order_margin), axis=-1)
+
+        diff = (box_2.center - box_1.center)
+        # diff = diff/th.norm(diff, p=2, dim=-1).unsqueeze(-1)
+
+        # r_trans_sum = 
+        
+        angle_loss = 1 - th.sigmoid(th.sum(diff * r_trans, dim=-1))
+        # logger.debug(f"order_loss: {order_loss.sum()}, angle_loss: {angle_loss.sum()}")
+        # volume_loss = th.linalg.norm(th.relu(box_1.offset - box_2.offset + margin), axis=-1)
+        return order_loss  + angle_loss #+ lower_loss #+ volume_loss
+
+    
+    
+    @staticmethod
+    def box_equiv_score(box_1, box_2, margin):
+        if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
+            box_1.center = box_1.center.unsqueeze(1)
+            box_1.offset = box_1.offset.unsqueeze(1)
+                        
+        box_1_bs, *_ = box_1.center.shape
+        box_2_bs, *_ = box_2.center.shape
+                
+        if box_1_bs != box_2_bs:
+            box_2.center = box_2.center.permute(1, 0, 2)
+            box_2.offset = box_2.offset.permute(1, 0, 2)
+                        
         lower_loss = th.linalg.norm(box_1.lower - box_2.lower, dim=-1)
         upper_loss = th.linalg.norm(box_1.upper - box_2.upper, dim=-1)
         return (lower_loss + upper_loss) / 2
 
-
-    @check_output_shape
-    @staticmethod
-    def order_loss(box_1, box_2, r_trans, margin):
-        order_loss = th.linalg.norm(th.relu(box_1.center + box_1.offset - (box_2.center + box_2.offset) + margin), dim=1)
-
-        diff = (box_2.center - box_1.center)
-        diff_norm = th.norm(diff, p=2, dim=1)
-        diff = diff/diff_norm.unsqueeze(1)
-        angle_loss = 1 - th.sigmoid(th.sum(diff * r_trans, dim=1))
-        return order_loss + angle_loss
 
     @staticmethod
     def corner_loss(box):
@@ -183,8 +256,73 @@ class Box():
             intersection_box = Box._pair_intersection(intersection_box, box)
 
         corner_loss = Box.corner_loss(intersection_box)
-        return intersection_box #, corner_loss
-        
+        return intersection_box 
+
+    @staticmethod
+    def intersection_with_negation_fast(position, *boxes):
+        boxes = list(boxes)
+        num_boxes = len(boxes)
+        position -= 1
+        box_to_negate = boxes.pop(position)
+        assert num_boxes == len(boxes) + 1
+        intermediate_intersection = Box.intersection(*boxes)
+
+        lower, upper = Box._get_lower_and_upper_corners(intermediate_intersection, box_to_negate)
+        condition = (upper < lower).any(dim=1)
+
+        new_lower = th.zeros_like(lower)
+        new_upper = th.zeros_like(upper)
+
+        new_lower[condition] = intermediate_intersection.lower[condition]
+        new_upper[condition] = intermediate_intersection.upper[condition]
+
+        naive = True
+        dimensionwise = False
+        if naive:
+            new_lower[~condition] = intermediate_intersection.lower[~condition]
+            new_upper[~condition] = intermediate_intersection.upper[~condition]
+        elif dimensionwise:
+
+            intersection = Box.intersection(intermediate_intersection, box_to_negate)
+            intersection_lower = intersection.lower
+            intersection_upper = intersection.upper
+
+            lower_inter = intermediate_intersection.lower
+            upper_inter = intermediate_intersection.upper
+
+            # Vectorized conditions for lower and upper sub-boxes
+            lower_part_condition = lower_inter < intersection_lower
+            upper_part_condition = upper_inter > intersection_upper
+
+            # Construct lower sub-boxes
+            sub_lower_lower = lower_inter.clone()
+            sub_upper_lower = th.where(lower_part_condition, intersection_lower, upper_inter)
+            sub_center_lower = (sub_lower_lower + sub_upper_lower) / 2
+            sub_offset_lower = (sub_upper_lower - sub_lower_lower) / 2
+
+            # Construct upper sub-boxes
+            sub_lower_upper = th.where(upper_part_condition, intersection_upper, lower_inter)
+            sub_upper_upper = upper_inter.clone()
+            sub_center_upper = (sub_lower_upper + sub_upper_upper) / 2
+            sub_offset_upper = (sub_upper_upper - sub_lower_upper) / 2
+
+            # Combine lower and upper sub-boxes
+            all_centers = th.cat([sub_center_lower.unsqueeze(-1), sub_center_upper.unsqueeze(-1)], dim=-1)
+            all_offsets = th.cat([sub_offset_lower.unsqueeze(-1), sub_offset_upper.unsqueeze(-1)], dim=-1)
+
+            # Calculate volumes (product of offsets) and find the largest sub-box
+            offset_prods = th.prod(all_offsets, dim=1)
+            max_volumes, max_idxs = offset_prods.max(dim=-1)
+
+            # Select centers and offsets corresponding to max volume
+            bs = lower_inter.size(0)
+            fst_dim_range = th.arange(bs)
+            selected_centers = all_centers[fst_dim_range, :, max_idxs]
+            selected_offsets = all_offsets[fst_dim_range, :, max_idxs]
+
+            return Box(selected_centers, selected_offsets)
+
+    
     @staticmethod
     def intersection_with_negation(position, *boxes):
         boxes = list(boxes)
@@ -204,9 +342,66 @@ class Box():
         new_upper[condition] = intermediate_intersection.upper[condition]
 
         naive = True
+        dimensionwise = False
         if naive:
             new_lower[~condition] = intermediate_intersection.lower[~condition]
             new_upper[~condition] = intermediate_intersection.upper[~condition]
+        elif dimensionwise:
+            intersection = Box.intersection(intermediate_intersection, box_to_negate)
+            logger.debug(f"intersection: {intersection.center.shape}")
+            intersection_lower = intersection.lower
+            intersection_upper = intersection.upper
+
+            lower_inter = intermediate_intersection.lower
+            upper_inter = intermediate_intersection.upper
+            
+            sub_boxes = []
+
+            # Iterate through dimensions to construct sub-boxes
+            bs, dim = lower.shape
+            
+            for i in range(dim):
+                # Lower part (before the intersection in dimension i)
+                lower_part_condition = (lower_inter[:, i] < intersection_lower[:, i])
+                sub_lower = lower_inter#.clone()
+                sub_upper = upper_inter.clone()
+                sub_upper[lower_part_condition] = intersection_lower[lower_part_condition]
+                sub_center = (sub_lower + sub_upper) / 2
+                sub_offset = (sub_upper - sub_lower) / 2
+                sub_boxes.append(Box(sub_center, sub_offset))
+
+                # Upper part (after the intersection in dimension i)
+                upper_part_condition = (upper_inter[:, i] > intersection_upper[:, i])
+                sub_lower = lower_inter.clone()
+                sub_upper = upper_inter#.clone()
+                sub_lower[upper_part_condition] = intersection_upper[upper_part_condition]
+                sub_center = (sub_lower + sub_upper) / 2
+                sub_offset = (sub_upper - sub_lower) / 2
+                sub_boxes.append(Box(sub_center, th.abs(sub_offset)))
+
+            logger.debug(f"sub_boxes: {len(sub_boxes)}")
+            logger.debug(f"sub_boxes[0]: {sub_boxes[0].center.shape}")
+
+            all_boxes_center = th.cat([b.center.unsqueeze(-1) for b in sub_boxes], dim=-1)
+            all_boxes_offset = th.cat([b.offset.unsqueeze(-1) for b in sub_boxes], dim=-1)
+
+            logger.debug(f"all_boxes_center: {all_boxes_center.shape}")
+            logger.debug(f"all_boxes_offset: {all_boxes_offset.shape}")
+
+            offset_prods = th.prod(all_boxes_offset, dim=1)
+            logger.debug(f"offset_prods: {offset_prods.shape}")
+            max_volumes, max_idxs = offset_prods.max(dim=-1)
+            logger.debug(f"max_volumes: {max_volumes.shape}")
+            logger.debug(f"max_idxs: {max_idxs.shape}")
+            fst_dim_range = th.arange(bs)
+            seleced_centers = all_boxes_center[fst_dim_range, :, max_idxs]
+            logger.debug(f"seleced_centers: {seleced_centers.shape}")
+            selected_offsets = all_boxes_offset[fst_dim_range, :, max_idxs]
+            logger.debug(f"selected_offsets: {selected_offsets.shape}")
+            return Box(seleced_centers, selected_offsets)
+                
+                            
+
         else:
             #this is not closed
             region_to_ignore = Box.intersection(intermediate_intersection, box_to_negate)
@@ -224,10 +419,11 @@ class Box():
             new_upper[mask_2] = box_to_negate.lower[mask_2]
 
             assert condition.sum() + mask.sum() + mask_2.sum() == len(new_lower)
-        new_center = (new_lower + new_upper) / 2
-        new_offset = (new_upper - new_lower) / 2
 
-        new_box = Box(new_center, new_offset)
-        corner_loss_2 = Box.corner_loss(new_box)
+        # new_center = (new_lower + new_upper) / 2
+        # new_offset = (new_upper - new_lower) / 2
+
         
-        return Box(new_center, new_offset) #, corner_loss_1 + corner_loss_2
+        return Box((new_lower + new_upper) / 2, (new_upper - new_lower) / 2)
+
+          
