@@ -35,7 +35,7 @@ class ELBEQAModule(nn.Module):
             weight_data_normalized = weight_data_normalized.reshape(-1, 1)
             self.class_embed.weight.data /= weight_data_normalized
 
-        
+            
         self.class_offset = nn.Embedding(self.nb_ont_classes, embed_dim)
         if xavier:
             nn.init.xavier_uniform_(self.class_offset.weight)
@@ -50,82 +50,96 @@ class ELBEQAModule(nn.Module):
         weight_data_normalized = th.linalg.norm(self.rel_embed.weight.data, axis=1).reshape(-1, 1)
         self.rel_embed.weight.data /= weight_data_normalized
 
+        self.rel_factor = nn.Embedding(nb_rels, embed_dim)
+        nn.init.uniform_(self.rel_factor.weight, a=-1, b=1)
+        weight_data_normalized = th.linalg.norm(self.rel_factor.weight.data, axis=1).reshape(-1, 1)
+        self.rel_factor.weight.data /= weight_data_normalized
+        
         self.scale_embed = nn.Embedding(nb_rels, embed_dim)
+        nn.init.uniform_(self.scale_embed.weight, a=-1, b=1)
+        weight_data_normalized = th.linalg.norm(self.scale_embed.weight.data, axis=1).reshape(-1, 1)
+        self.scale_embed.weight.data /= weight_data_normalized
+        
+        self.scale_bias = nn.Embedding(nb_rels, embed_dim)
+        nn.init.uniform_(self.scale_bias.weight, a=-1, b=1)
+        weight_data_normalized = th.linalg.norm(self.scale_bias.weight.data, axis=1).reshape(-1, 1)
+        self.scale_bias.weight.data /= weight_data_normalized
+
         
         self.margin = margin
 
     def query_1p(self, data, test=False):
-        return L.query_1p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, self.transitive_ids, test)
+        return L.query_1p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, self.transitive_ids, test)
 
     def query_2p(self, data, test=False):
-        return L.query_2p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, self.transitive_ids, test)
+        return L.query_2p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, self.transitive_ids, test)
 
     def query_3p(self, data, test=False):
-        return L.query_3p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, self.transitive_ids, test)
+        return L.query_3p_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, self.transitive_ids, test)
 
     def query_2i(self, data, test=False):
-        return L.query_2i_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_2i_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
 
     def query_3i(self, data, test=False):
-        return L.query_3i_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_3i_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
 
     def query_2in(self, data, test=False):
-        return L.query_2in_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_2in_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
     
     def query_3in(self, data, test=False):
-        return L.query_3in_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_3in_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
 
     def query_pi(self, data, test=False):
-        return L.query_pi_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_pi_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
 
     def query_ip(self, data, test=False):
-        return L.query_ip_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, self.transitive_ids, test)
+        return L.query_ip_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, self.transitive_ids, test)
 
     def query_inp(self, data, test=False):
-        return L.query_inp_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, self.transitive_ids, test)
+        return L.query_inp_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, self.transitive_ids, test)
 
     def query_pin(self, data, test=False):
-        return L.query_pin_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_pin_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
 
     def query_pni(self, data, test=False):
-        return L.query_pni_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.margin, test)
+        return L.query_pni_loss(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.margin, test)
     
 
     # def embedding_1p(self, data, test=False):
-        # return E.embedding_1p(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.transitive_ids)
+        # return E.embedding_1p(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.transitive_ids)
 
     # def embedding_2p(self, data, test=False):
-        # return E.embedding_2p(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.transitive_ids)
+        # return E.embedding_2p(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.transitive_ids)
 
     # def embedding_3p(self, data, test=False):
-        # return E.embedding_3p(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.transitive_ids)
+        # return E.embedding_3p(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.transitive_ids)
 
     # def embedding_2i(self, data, test=False):
-        # return E.embedding_2i(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_2i(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed)
 
     # def embedding_3i(self, data, test=False):
-        # return E.embedding_3i(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_3i(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed)
 
     # def embedding_2in(self, data, test=False):
-        # return E.embedding_2in(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_2in(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed)
     
     # def embedding_3in(self, data, test=False):
-        # return E.embedding_3in(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_3in(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed)
 
     # def embedding_pi(self, data, test=False):
-        # return E.embedding_pi(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_pi(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed)
 
     # def embedding_ip(self, data, test=False):
-        # return E.embedding_ip(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.transitive_ids)
+        # return E.embedding_ip(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.transitive_ids)
 
     # def embedding_inp(self, data, test=False):
-        # return E.embedding_inp(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed, self.transitive_ids)
+        # return E.embedding_inp(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias, self.transitive_ids)
 
     # def embedding_pin(self, data, test=False):
-        # return E.embedding_pin(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_pin(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias)
 
     # def embedding_pni(self, data, test=False):
-        # return E.embedding_pni(data, self.class_embed, self.class_offset, self.rel_embed, self.scale_embed)
+        # return E.embedding_pni(data, self.class_embed, self.class_offset, self.rel_embed, self.rel_factor, self.scale_embed, self.scale_bias)
     
 
 

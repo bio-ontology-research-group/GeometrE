@@ -7,6 +7,8 @@ logger.setLevel(logging.INFO)
 
 enable_check_output_shape = True
 
+
+
 def check_output_shape(func):
     def wrapper(*args, **kwargs):
         logger.debug(f"\nCheck output shape: {func.__name__}")
@@ -47,7 +49,7 @@ class Box():
         if check_shape:
             assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
         self.center = center
-        self.offset = th.abs(offset)
+        self.offset = offset
         
     @property
     def lower(self):
@@ -61,7 +63,7 @@ class Box():
         return Box(self.center[index_tensor], self.offset[index_tensor])
 
     
-    def translate(self, translation, scaling, transitive_mask=None, r_idxs=None):
+    def translate(self, translation, factor, scaling, scaling_bias, transitive_mask=None, r_idxs=None):
         if transitive_mask is not None:
             # translation[transitive_mask] = th.zeros_like(translation[transitive_mask]) + 1e-7
             translation[transitive_mask] = th.abs(translation[transitive_mask]) #/th.norm(translation[transitive_mask], dim=-1).unsqueeze(-1)
@@ -75,13 +77,19 @@ class Box():
             
             # translation[transitive_mask][r_range, r_idxs] = 1e-7
             # translation = translation * mask
-            non_zero = (translation[transitive_mask] != 0).sum()
+            # non_zero = (translation[transitive_mask] != 0).sum()
+
+            factor[transitive_mask] = 1
+            # scaling[transitive_mask] = 1
+            # scaling_bias[transitive_mask] = 0
+            
             # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
             # scaling[transitive_mask] = 1
             # scaling[r_range, r_idxs] = 1
             # scaling[transitive_mask] = 1 #th.sigmoid(scaling[transitive_mask]) + 1
-        new_center = self.center + translation
-        new_offset = self.offset * th.abs(scaling)
+        new_center = self.center * factor + translation
+        new_offset = th.abs(self.offset * th.abs(scaling) + scaling_bias) # NOTE important to provide a positive offset here.
+ 
         return Box(new_center, new_offset)
         
     # @check_output_shape
@@ -92,34 +100,33 @@ class Box():
         if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
             box_1.center = box_1.center.unsqueeze(1)
             box_1.offset = box_1.offset.unsqueeze(1)
-            # box_1.lower = box_1.lower.unsqueeze(1)
-            # box_1.upper = box_1.upper.unsqueeze(1)
-            
+                        
         box_1_bs, *_ = box_1.center.shape
         box_2_bs, *_ = box_2.center.shape
 
         if box_1_bs != box_2_bs:
             box_2.center = box_2.center.permute(1, 0, 2)
             box_2.offset = box_2.offset.permute(1, 0, 2)
-            # box_2.lower = box_2.lower.permute(1, 0, 2)
-            # box_2.upper = box_2.upper.permute(1, 0, 2)
-            
-        logger.debug(f"box_1: {box_1.center.shape}, box_2: {box_2.center.shape}")
-        logger.debug(f"box_1: {box_1.offset.shape}, box_2: {box_2.offset.shape}")
 
+        box_1_corner_loss = Box.corner_loss(box_1)
+        box_2_corner_loss = Box.corner_loss(box_2)
+            
         euc = th.abs(box_1.center - box_2.center)
         logger.debug(f"euc: {euc.shape}")
         
         dst = th.linalg.norm(th.relu(euc + box_1.offset - box_2.offset + margin), axis=-1)
         logger.debug(f"dst: {dst.shape}")
-        return dst
+        return dst + box_1_corner_loss + box_2_corner_loss
 
     @staticmethod
     def box_order_score(box_1, box_2, margin, r_trans, transitive_mask, r_idxs):
         logger.debug(f"{Box.__name__}-{Box.box_order_score.__name__} box_1 center: {box_1.center.shape}, box_2 center: {box_2.center.shape}, r_trans: {r_trans.shape}")
 
         r_trans = th.abs(r_trans)
-
+        mask = th.ones_like(r_trans)
+        # r_range = th.arange(len(r_trans), device=r_trans.device)
+        # mask[r_range, r_idxs] = 1
+        
         # r_trans_sum = th.sum(r_trans, dim=-1)
         # ones_like_r = th.ones_like(r_trans_sum)
         # assert th.allclose(r_trans_sum, ones_like_r), f"Sum in r_trans: {r_trans_sum.sum()} not equal to sum in ones: {ones_like_r.sum()}"
@@ -222,18 +229,32 @@ class Box():
         if box_1_bs != box_2_bs:
             box_2.center = box_2.center.permute(1, 0, 2)
             box_2.offset = box_2.offset.permute(1, 0, 2)
-                        
+
+        box_1_corner_loss = Box.corner_loss(box_1)
+        box_2_corner_loss = Box.corner_loss(box_2)
+        
         lower_loss = th.linalg.norm(box_1.lower - box_2.lower, dim=-1)
         upper_loss = th.linalg.norm(box_1.upper - box_2.upper, dim=-1)
-        return (lower_loss + upper_loss) / 2
+        loss = (lower_loss + upper_loss) / 2 + (box_1_corner_loss + box_2_corner_loss) / 2
+
+        return loss
+        # return (lower_loss + upper_loss) / 2
 
 
     @staticmethod
     def corner_loss(box):
         loss = th.sum(th.relu(box.lower - box.upper), dim=-1)
-        loss = loss.unsqueeze(1) if len(loss.shape) == 1 else loss
+        # loss = loss.unsqueeze(1) if len(loss.shape) == 1 else loss
         logger.debug(f"{box.__class__.__name__}-{box.corner_loss.__name__} loss: {loss.shape}")
         return loss
+
+    @staticmethod
+    def inverse_corner_loss(box):
+        loss = th.sum(th.relu(box.upper - box.lower), dim=-1)
+        # loss = loss.unsqueeze(1) if len(loss.shape) == 1 else loss
+        logger.debug(f"{box.__class__.__name__}-{box.corner_loss.__name__} loss: {loss.shape}")
+        return loss
+
     
     @staticmethod
     def _get_lower_and_upper_corners(box1, box2):
@@ -255,7 +276,7 @@ class Box():
         for box in boxes[1:]:
             intersection_box = Box._pair_intersection(intersection_box, box)
 
-        corner_loss = Box.corner_loss(intersection_box)
+        # corner_loss = Box.corner_loss(intersection_box)
         return intersection_box 
 
     @staticmethod
@@ -332,6 +353,8 @@ class Box():
         assert num_boxes == len(boxes) + 1
         intermediate_intersection = Box.intersection(*boxes)
 
+        return intermediate_intersection
+        
         lower, upper = Box._get_lower_and_upper_corners(intermediate_intersection, box_to_negate)
         condition = (upper < lower).any(dim=1)
 

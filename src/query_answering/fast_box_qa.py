@@ -95,11 +95,11 @@ def group_queries_and_answers_by_task(queries, *answers_list):
         assert set(query_keys) == set(answer_keys), f"Queries and answers do not match: {query_keys} != {answer_keys}"
     return queries_dict, *all_answers_dict
 
-def load_data(data_path):
+def load_data(data_path, saturated_data):
     '''
     Load queries and remove queries not in tasks
     '''
-    logger.info("loading data")
+    logger.info(f"Loading data. Saturated: {saturated_data}")
     ent2id = pkl.load(open(os.path.join(data_path, "ent2id.pkl"), 'rb'))
     id2ent = pkl.load(open(os.path.join(data_path, "id2ent.pkl"), 'rb'))
     rel2id = pkl.load(open(os.path.join(data_path, "rel2id.pkl"), 'rb'))
@@ -108,27 +108,29 @@ def load_data(data_path):
     train_queries = pkl.load(open(os.path.join(data_path, "train-queries.pkl"), 'rb'))
     train_answers = pkl.load(open(os.path.join(data_path, "train-answers.pkl"), 'rb'))
     valid_queries = pkl.load(open(os.path.join(data_path, "valid-queries.pkl"), 'rb'))
-    saturated_data = True
-    if saturated_data:
+    
+    if saturated_data == "yes":
         valid_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-hard-answers.pkl"), 'rb'))
         valid_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-easy-answers.pkl"), 'rb'))
         test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
         test_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-test-hard-answers.pkl"), 'rb'))
         test_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-test-easy-answers.pkl"), 'rb'))
 
-    else:
+    elif saturated_data == "no":
         valid_hard_answers = pkl.load(open(os.path.join(data_path, "valid-hard-answers.pkl"), 'rb'))
         valid_easy_answers = pkl.load(open(os.path.join(data_path, "valid-easy-answers.pkl"), 'rb'))
         test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
         test_hard_answers = pkl.load(open(os.path.join(data_path, "test-hard-answers.pkl"), 'rb'))
         test_easy_answers = pkl.load(open(os.path.join(data_path, "test-easy-answers.pkl"), 'rb'))
-
+    else:
+        raise ValueError("Saturated data must be either 'yes' or 'no'")
     # remove tasks not in args.tasks
 
     allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in", "inp", "pin", "pni"]
     # allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in", "3in"]
     # allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "ip", "pi", "2in"]
-    allowed_tasks = ["1p"]
+    # allowed_tasks = ["1p", "2i", "2p", "3p", "3i", "inp", "pin", "pni"]
+    allowed_tasks = ["1p", "2p", "3p", "2i", "3i", "inp", "pin", "pni", "2in", "3in"]
     for name in all_tasks:
         short_name = query_name_dict[name]
         if short_name not in allowed_tasks:
@@ -153,31 +155,37 @@ def load_data(data_path):
 @ck.option('--embed_dim', '-dim', default=400, help='Embedding dimension')
 @ck.option('--batch_size', '-bs', default=512, help='Batch size')
 @ck.option('--learning_rate', '-lr', default=0.001, help='Learning rate')
-@ck.option('--margin', '-m', default=0.01, help='Margin')
+@ck.option('--loss_margin', '-m', default=0.01, help='Loss Margin')
 @ck.option('--num_negs', '-negs', default=1, help='Number of negative samples')
 @ck.option('--device', '-dev', default='cuda', help='Device to use')
 @ck.option('--no_sweep', '-ns', is_flag=True, help='Do not use wandb sweep')
 @ck.option('--wandb_description', "-desc", default="transEL-QA", help="Description for wandb")
-def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, device, no_sweep, wandb_description):
+@ck.option('--transitive', '-t', type=ck.Choice(['yes', 'no']), help='Use transitive relations')
+@ck.option('--saturated', '-sat', type=ck.Choice(['yes', 'no']), help='Use saturated data')
+@ck.option('--only_test', '-ot', is_flag=True, help='Only test'
+def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs, device, no_sweep, wandb_description, transitive, saturated, only_test):
 
     wandb_logger = wandb.init(entity="ferzcam", project="transEL-QA", name=wandb_description)
                      
     if no_sweep:
         wandb_logger.log({"embed_dim": embed_dim,
-                          "margin": margin,
+                          "loss_margin": loss_margin,
                           "learning_rate": learning_rate,
                           "batch_size": batch_size,
                           "num_negs": num_negs,
-                          
+                          "transitive": transitive,
+                          "saturated": saturated
                           })
     else:
         embed_dim = wandb.config.embed_dim
-        margin = wandb.config.margin
+        loss_margin = wandb.config.loss_margin
         learning_rate = wandb.config.learning_rate
         batch_size = wandb.config.batch_size
         num_negs = wandb.config.num_negs
+        transitive = wandb.config.transitive
+        saturated = wandb.config.saturated
         
-    train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel = load_data(data_path)
+    train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel = load_data(data_path, saturated)
 
     dataset_name = data_path.split("/")[-1]
 
@@ -190,45 +198,55 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
     entities_tensor = th.arange(nentity).to(device)
     evaluator = QAEvaluator(entities_tensor, 70, device)
 
-    # train_dataloader = DataLoader(TrainDatasetOld(train_queries, nentity, nrelation, num_negs, train_answers),
-                                  # batch_size=batch_size,
-                                  # shuffle=True,
-                                  # num_workers=8,
-                                  # collate_fn=TrainDataset.collate_fn
-                                  # )
-    
-    
     train_dataset_1p = construct_train_dataset(train_queries['1p'], train_answers['1p'])
-    # train_dataset_2p = construct_train_dataset(train_queries['2p'], train_answers['2p'])
-    # train_dataset_3p = construct_train_dataset(train_queries['3p'], train_answers['3p'])
-    # train_dataset_2i = construct_train_dataset(train_queries['2i'], train_answers['2i'])
-    # train_dataset_3i = construct_train_dataset(train_queries['3i'], train_answers['3i'])
-    # train_dataset_2in = construct_train_dataset(train_queries['2in'], train_answers['2in'])
-    # train_dataset_3in = construct_train_dataset(train_queries['3in'], train_answers['3in'])
-    # train_dataset_inp = construct_train_dataset(train_queries['inp'], train_answers['inp'])
-    # train_dataset_pin = construct_train_dataset(train_queries['pin'], train_answers['pin'])
-    # train_dataset_pni = construct_train_dataset(train_queries['pni'], train_answers['pni'])
+    train_dataset_2p = construct_train_dataset(train_queries['2p'], train_answers['2p'])
+    train_dataset_3p = construct_train_dataset(train_queries['3p'], train_answers['3p'])
+    train_dataset_2i = construct_train_dataset(train_queries['2i'], train_answers['2i'])
+    train_dataset_3i = construct_train_dataset(train_queries['3i'], train_answers['3i'])
+    train_dataset_2in = construct_train_dataset(train_queries['2in'], train_answers['2in'])
+    train_dataset_3in = construct_train_dataset(train_queries['3in'], train_answers['3in'])
+    train_dataset_inp = construct_train_dataset(train_queries['inp'], train_answers['inp'])
+    train_dataset_pin = construct_train_dataset(train_queries['pin'], train_answers['pin'])
+    train_dataset_pni = construct_train_dataset(train_queries['pni'], train_answers['pni'])
+
+    dataset_sizes = {"1p": train_dataset_1p[0].shape[0], "2p": train_dataset_2p[0].shape[0], "3p": train_dataset_3p[0].shape[0],
+                     "2i": train_dataset_2i[0].shape[0], "3i": train_dataset_3i[0].shape[0],
+                     "2in": train_dataset_2in[0].shape[0], "3in": train_dataset_3in[0].shape[0],
+                     "inp": train_dataset_inp[0].shape[0], "pin": train_dataset_pin[0].shape[0], "pni": train_dataset_pni[0].shape[0]
+                     }
+            
+    logger.info(f"Dataset sizes: {dataset_sizes}")
+
     
     train_dataloader_1p = FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_1p, batch_size=batch_size, shuffle=True)
-    # train_dataloader_2p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2p, batch_size=batch_size, shuffle=True))
-    # train_dataloader_3p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3p, batch_size=batch_size, shuffle=True))
-    # train_dataloader_2i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2i, batch_size=batch_size, shuffle=True))
-    # train_dataloader_3i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3i, batch_size=batch_size, shuffle=True))
-    # train_dataloader_2in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2in, batch_size=batch_size, shuffle=True))
-    # train_dataloader_3in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3in, batch_size=batch_size, shuffle=True))
-    # train_dataloader_inp = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_inp, batch_size=batch_size, shuffle=True))
-    # train_dataloader_pin = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pin, batch_size=batch_size, shuffle=True))
-    # train_dataloader_pni = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pni, batch_size=batch_size, shuffle=True))
+    train_dataloader_2p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2p, batch_size=batch_size, shuffle=True))
+    train_dataloader_3p = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3p, batch_size=batch_size, shuffle=True))
+    train_dataloader_2i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2i, batch_size=batch_size, shuffle=True))
+    train_dataloader_3i = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3i, batch_size=batch_size, shuffle=True))
+    train_dataloader_2in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_2in, batch_size=batch_size, shuffle=True))
+    train_dataloader_3in = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_3in, batch_size=batch_size, shuffle=True))
+    train_dataloader_inp = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_inp, batch_size=batch_size, shuffle=True))
+    train_dataloader_pin = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pin, batch_size=batch_size, shuffle=True))
+    train_dataloader_pni = cycle(FastTensorWithNegativesDataLoader(nentity, num_negs, *train_dataset_pni, batch_size=batch_size, shuffle=True))
 
 
     dataloaders = dict()
-    # dataloaders = {"2p": train_dataloader_2p, "3p": train_dataloader_3p,
-                   # "2i": train_dataloader_2i, "3i": train_dataloader_3i,
-                   # "2in": train_dataloader_2in, "3in": train_dataloader_3in,
-                   # "inp": train_dataloader_inp, "pin": train_dataloader_pin, "pni": train_dataloader_pni
-                   # }
+    dataloaders = {
+        "2p": train_dataloader_2p, "3p": train_dataloader_3p,
+        "2i": train_dataloader_2i, "3i": train_dataloader_3i,
+        "2in": train_dataloader_2in, "3in": train_dataloader_3in,
+        "inp": train_dataloader_inp, "pin": train_dataloader_pin, "pni": train_dataloader_pni
+                   }
 
-    valid_dataset_1p = TestDataset(valid_queries['1p'], valid_easy_answers['1p'], valid_hard_answers['1p'])
+    data_loader_sizes = {"1p": train_dataset_1p[0].shape[0], "2p": train_dataset_2p[0].shape[0], "3p": train_dataset_3p[0].shape[0],
+                         "2i": train_dataset_2i[0].shape[0], "3i": train_dataset_3i[0].shape[0],
+                         "2in": train_dataset_2in[0].shape[0], "3in": train_dataset_3in[0].shape[0],
+                         "inp": train_dataset_inp[0].shape[0], "pin": train_dataset_pin[0].shape[0], "pni": train_dataset_pni[0].shape[0]
+                         }
+    total_count = sum(data_loader_sizes.values())
+    train_data_weights = {key: value/total_count for key, value in data_loader_sizes.items()}
+
+    # valid_dataset_1p = TestDataset(valid_queries['1p'], valid_easy_answers['1p'], valid_hard_answers['1p'])
     # valid_dataset_2p = TestDataset(valid_queries['2p'], valid_easy_answers['2p'], valid_hard_answers['2p'])
     # valid_dataset_3p = TestDataset(valid_queries['3p'], valid_easy_answers['3p'], valid_hard_answers['3p'])
     # valid_dataset_2i = TestDataset(valid_queries['2i'], valid_easy_answers['2i'], valid_hard_answers['2i'])
@@ -241,41 +259,48 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
     # valid_dataset_pin = TestDataset(valid_queries['pin'], valid_easy_answers['pin'], valid_hard_answers['pin'])
     # valid_dataset_pni = TestDataset(valid_queries['pni'], valid_easy_answers['pni'], valid_hard_answers['pni'])
     
-    valid_datasets = {"1p": valid_dataset_1p, #"2p": valid_dataset_2p, "3p": valid_dataset_3p,
+    # valid_datasets = {"1p": valid_dataset_1p#, "2p": valid_dataset_2p, "3p": valid_dataset_3p,
                       # "2i": valid_dataset_2i, "3i": valid_dataset_3i,
                       # "2in": valid_dataset_2in, "3in": valid_dataset_3in,
                       # "pi": valid_dataset_pi, "ip": valid_dataset_ip,
                       # "inp": valid_dataset_inp, "pin": valid_dataset_pin, "pni": valid_dataset_pni
-                      }
+                      # }
 
     test_dataset_1p = TestDataset(test_queries['1p'], test_easy_answers['1p'], test_hard_answers['1p'])
-    # test_dataset_2p = TestDataset(test_queries['2p'], test_easy_answers['2p'], test_hard_answers['2p'])
-    # test_dataset_3p = TestDataset(test_queries['3p'], test_easy_answers['3p'], test_hard_answers['3p'])
-    # test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
-    # test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
-    # test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
-    # test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
-    # test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
-    # test_dataset_ip = TestDataset(test_queries['ip'], test_easy_answers['ip'], test_hard_answers['ip'])
-    # test_dataset_inp = TestDataset(test_queries['inp'], test_easy_answers['inp'], test_hard_answers['inp'])
-    # test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
-    # test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
+    test_dataset_2p = TestDataset(test_queries['2p'], test_easy_answers['2p'], test_hard_answers['2p'])
+    test_dataset_3p = TestDataset(test_queries['3p'], test_easy_answers['3p'], test_hard_answers['3p'])
+    test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
+    test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
+    test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
+    test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
+    test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
+    test_dataset_ip = TestDataset(test_queries['ip'], test_easy_answers['ip'], test_hard_answers['ip'])
+    test_dataset_inp = TestDataset(test_queries['inp'], test_easy_answers['inp'], test_hard_answers['inp'])
+    test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
+    test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
 
-    test_datasets = {"1p": test_dataset_1p, #"2p": test_dataset_2p, "3p": test_dataset_3p,
-                     # "2i": test_dataset_2i, "3i": test_dataset_3i,
-                     # "2in": test_dataset_2in, "3in": test_dataset_3in,
-                     # "pi": test_dataset_pi, "ip": test_dataset_ip,
-                     # "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
+    test_datasets = {"1p": test_dataset_1p, "2p": test_dataset_2p, "3p": test_dataset_3p,
+                     "2i": test_dataset_2i, "3i": test_dataset_3i,
+                     "2in": test_dataset_2in, "3in": test_dataset_3in,
+                     "pi": test_dataset_pi, "ip": test_dataset_ip,
+                     "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
                      }
     
 
     transitive_dataset_roles = transitive_roles[dataset_name]
     logger.info(f"Transitive roles: {transitive_dataset_roles}")
-    transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
-    # transitive_ids = None
+    if transitive == "yes":
+        transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
+    elif transitive == "no":
+        transitive_ids = None
+    else:
+        raise ValueError("Transitive must be either 'yes' or 'no'")
     
-    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=margin).to(device)
+    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=0).to(device)
 
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {total_params}")
+    
     optimizer = th.optim.AdamW(model.parameters(), lr=learning_rate)
     scheduler = th.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
     
@@ -285,8 +310,13 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
     prev_neg_loss = float('inf')
     curr_pos_loss = prev_pos_loss
     curr_neg_loss = prev_neg_loss
+
     
-    with tqdm(range(1000)) as pbar:
+    step = 0
+    num_warmup_steps = 1000
+    initial_lr = learning_rate
+    
+    with tqdm(range(101)) as pbar:
         for epoch in tqdm(range(1000)):
             epoch_loss = 0
             epoch_trans_score = 0
@@ -314,6 +344,14 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
 
 
             for batch_data in tqdm(train_dataloader_1p, leave=False):
+
+                # if step < num_warmup_steps:
+                    # step += 1
+                    # lr = initial_lr * (step / num_warmup_steps)
+                    # for param_group in optimizer.param_groups:
+                        # param_group['lr'] = lr
+
+                
                 init, pos_tail, subsampling_weights, neg_tails = batch_data
                 
                 init = init.to(device)
@@ -330,7 +368,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, margin, num_negs, devi
                 logger.debug(f"\n\n\nEntering neg logits")
                 neg_logits = model(init, neg_tails, "1p")
 
-                loss_margin = 1 #0.01 #20 #10
+                # loss_margin = 20 #0.01 #20 #10
                 loss_1p = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
                 if transitive_ids is not None:
                     r = init[:, -1]

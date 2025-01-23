@@ -47,33 +47,34 @@ def check_output_shape(func):
 
 
 @check_output_shape
-def query_1p_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, transitive_ids, test):
+def query_1p_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, transitive_ids, test):
     init, tails = data
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     
     if transitive_ids is None:
-        box_c = E.embedding_1p(init, class_embed, class_offset, rel_embed, scale_embed, None, None)
+        box_c = E.embedding_1p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, None, None)
         box_d = Box(d, d_offset)
         loss = Box.box_inclusion_score(box_c, box_d, margin)
     else:
         r = init[:, -1]
         mask = th.isin(r, transitive_ids)
         logger.debug(f"mask in query_1p_loss: {mask.shape}")
-        box_c = E.embedding_1p(init, class_embed, class_offset, rel_embed, scale_embed, mask, r_idxs = r[mask])
+        box_c = E.embedding_1p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs = r[mask])
         box_d = Box(d, d_offset)
     
         r_embed = rel_embed(r[mask])
+        r_trans = th.abs(r_embed) #/th.norm(r_embed, dim=1).unsqueeze(1)
         
 
-        trans_r_range = th.arange(r_embed.shape[0], device=init.device)
-        zeros_mask = th.zeros_like(r_embed, device=init.device)
-        zeros_mask[trans_r_range, r[mask]] = 1
-        logger.debug(f"Sum of zeros mask: {zeros_mask.shape} - {zeros_mask.sum()}")
-        r_trans = r_embed * zeros_mask
-        r_trans = th.abs(r_trans)/th.norm(r_trans, dim=1).unsqueeze(1)
-        logger.debug(f"Sum of r: {r_trans.shape} - {r_trans.sum()}")
-        # r_trans[trans_r_range, r[mask]] = 0
+        # trans_r_range = th.arange(r_embed.shape[0], device=init.device)
+        # zeros_mask = th.zeros_like(r_embed, device=init.device)
+        # zeros_mask[trans_r_range, r[mask]] = 1
+        # logger.debug(f"Sum of zeros mask: {zeros_mask.shape} - {zeros_mask.sum()}")
+        # r_trans = r_embed * zeros_mask
+        # r_trans = th.abs(r_trans)/th.norm(r_trans, dim=1).unsqueeze(1)
+        # logger.debug(f"Sum of r: {r_trans.shape} - {r_trans.sum()}")
+        ########## r_trans[trans_r_range, r[mask]] = 0
         
         if test:
             loss = -1 * th.ones((init.shape[0], tails.shape[0]), device=init.device)
@@ -96,34 +97,34 @@ def query_1p_loss(data, class_embed, class_offset, rel_embed, scale_embed, margi
     return loss
 
 @check_output_shape
-def query_2p_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, transitive_ids, test):
+def query_2p_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, transitive_ids, test):
     init, tails = data
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     
     if transitive_ids is None:
-        box_c = E.embedding_2p(init, class_embed, class_offset, rel_embed, scale_embed, None)
+        box_c = E.embedding_2p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, None, None)
         box_d = Box(d, d_offset)
         loss = Box.box_inclusion_score(box_c, box_d, margin)
     else:
         r = init[:, -1]
         mask = th.isin(r, transitive_ids)
-        box_c = E.embedding_2p(init, class_embed, class_offset, rel_embed, scale_embed, mask)
+        box_c = E.embedding_2p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs = r[mask])
         box_d = Box(d, d_offset)
 
         r_embed = rel_embed(r[mask])
-        r_trans = th.abs(r_embed)/th.norm(r_embed, dim=1).unsqueeze(1)
+        r_trans = th.abs(r_embed) #/th.norm(r_embed, dim=1).unsqueeze(1)
 
         if test:
             loss = -1 * th.ones((init.shape[0], tails.shape[0]), device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans, mask, r[mask])
             box_d.center = box_d.center.permute(1, 0, 2)
             box_d.offset = box_d.offset.permute(1, 0, 2)
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d, margin)
         
         else:
             loss = -1 * th.ones(tails.shape[:2], device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans, mask, r[mask])
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d.slice(~mask), margin)
 
         assert (loss == -1).sum() == 0, f"Loss tensor contains -1 values."
@@ -131,52 +132,56 @@ def query_2p_loss(data, class_embed, class_offset, rel_embed, scale_embed, margi
     return loss
 
 @check_output_shape
-def query_3p_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, transitive_ids, test):
+def query_3p_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, transitive_ids, test):
     init, tails = data
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     
     if transitive_ids is None:
-        box_c = E.embedding_3p(init, class_embed, class_offset, rel_embed, scale_embed, None)
+        box_c = E.embedding_3p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, None, None)
         box_d = Box(d, d_offset)
         return Box.box_inclusion_score(box_c, box_d, margin)
     else:
         r = init[:, -1]
         mask = th.isin(r, transitive_ids)
-        box_c = E.embedding_3p(init, class_embed, class_offset, rel_embed, scale_embed, mask)
+        box_c = E.embedding_3p(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs = r[mask])
         box_d = Box(d, d_offset)
 
         r_embed = rel_embed(r[mask])
-        r_trans = th.abs(r_embed)/th.norm(r_embed, dim=1).unsqueeze(1)
+        r_trans = th.abs(r_embed) #/th.norm(r_embed, dim=1).unsqueeze(1)
         
         if test:
             loss = -1 * th.ones((init.shape[0], tails.shape[0]), device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans, mask, r[mask])
             box_d.center = box_d.center.permute(1, 0, 2)
             box_d.offset = box_d.offset.permute(1, 0, 2)
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d, margin)
         else:
             loss = -1 * th.ones(tails.shape[:2], device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans, mask, r[mask])
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d.slice(~mask), margin)
 
         assert (loss == -1).sum() == 0, f"Loss tensor contains -1 values."
     return loss
         
 @check_output_shape
-def query_2i_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_2i_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     init, tails = data
-    box_c = E.embedding_2i(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_2i(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
+    corner_loss_c = Box.corner_loss(box_c)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
     inclusion_score = Box.box_inclusion_score(box_c, box_d, margin)
-    return inclusion_score
+    if len(inclusion_score.shape) == 1:
+        inclusion_score = inclusion_score.unsqueeze(1)
+    logger.debug(f"Inclusion score shape: {inclusion_score.shape} - Corner loss shape: {corner_loss_c.shape}")
+    return inclusion_score #+ corner_loss_c
 
 @check_output_shape
-def query_3i_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_3i_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     init, tails = data
-    box_c = E.embedding_3i(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_3i(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
@@ -184,57 +189,96 @@ def query_3i_loss(data, class_embed, class_offset, rel_embed, scale_embed, margi
     # return Box.box_equiv_score(intersection, box_d, margin) + corner_loss
 
 @check_output_shape
-def query_2in_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_2in_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     # (('e', ('r',)), ('e', ('r', 'n'))): '2in',
     init, tails = data
-    box_c = E.embedding_2in(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_2in(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
-    return Box.box_inclusion_score(box_c, box_d, margin)
+
+    # condition_1 = len(box_c.center.shape) == 2 and len(box_d.center.shape) == 3
+    # condition_2 = box_c.center.shape[0] == box_d.center.shape[0]
+    # if condition_1 and condition_2:
+        # box_c.center = box_c.center.unsqueeze(1)
+        # box_c.offset = box_c.offset.unsqueeze(1)
+
+        # logger.debug(f"Box c center shape: {box_c.center.shape} - Box d center shape: {box_d.center.shape}")
+        
+        # intersection = Box.intersection(box_c, box_d)
+        # inverse_corner_loss = Box.inverse_corner_loss(intersection)
+
+        # box_c.center = box_c.center.squeeze(1)
+        # box_c.offset = box_c.offset.squeeze(1)
+
+    # else:
+        # inverse_corner_loss = 0
+        
+    return Box.box_inclusion_score(box_c, box_d, margin) #+ inverse_corner_loss
     # return Box.box_equiv_score(intersection, box_d, margin) + corner_loss
     
 @check_output_shape
-def query_3in_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_3in_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     # (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n')))
     init, tails = data
-    box_c = E.embedding_3in(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_3in(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
-    return Box.box_inclusion_score(box_c, box_d, margin)
+
+    # condition_1 = len(box_c.center.shape) == 2 and len(box_d.center.shape) == 3
+    # condition_2 = box_c.center.shape[0] == box_d.center.shape[0]
+    # if condition_1 and condition_2:
+        # box_c.center = box_c.center.unsqueeze(1)
+        # box_c.offset = box_c.offset.unsqueeze(1)
+
+        # logger.debug(f"Box c center shape: {box_c.center.shape} - Box d center shape: {box_d.center.shape}")
+        
+        # intersection = Box.intersection(box_c, box_d)
+        # inverse_corner_loss = Box.inverse_corner_loss(intersection)
+
+        # box_c.center = box_c.center.squeeze(1)
+        # box_c.offset = box_c.offset.squeeze(1)
+
+    # else:
+        # inverse_corner_loss = 0
+        
+    return Box.box_inclusion_score(box_c, box_d, margin)# + inverse_corner_loss
+
+
+    # return Box.box_inclusion_score(box_c, box_d, margin)
     # return Box.box_equiv_score(intersection, box_d, margin) + corner_loss
     
 
 @check_output_shape
-def query_ip_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, transitive_ids, test):
+def query_ip_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, transitive_ids, test):
     # ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
     init, tails = data
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     
     if transitive_ids is None:
-        box_c = E.embedding_ip(init, class_embed, class_offset, rel_embed, scale_embed, None)
+        box_c = E.embedding_ip(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, None, None)
         box_d = Box(d, d_offset)
         return Box.box_inclusion_score(box_c, box_d, margin)
     else:
         r = init[:, -1]
         mask = th.isin(r, transitive_ids)
-        box_c = E.embedding_ip(init, class_embed, class_offset, rel_embed, scale_embed, mask)
+        box_c = E.embedding_ip(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs = r[mask])
         box_d = Box(d, d_offset)
 
         r_embed = rel_embed(r[mask])
-        r_trans = th.abs(r_embed)/th.norm(r_embed, dim=1).unsqueeze(1)
+        r_trans = th.abs(r_embed) #/th.norm(r_embed, dim=1).unsqueeze(1)
         
         if test:
             loss = -1 * th.ones((init.shape[0], tails.shape[0]), device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans, mask, r[mask])
             box_d.center = box_d.center.permute(1, 0, 2)
             box_d.offset = box_d.offset.permute(1, 0, 2)
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d, margin)
         else:
             loss = -1 * th.ones(tails.shape[:2], device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans, mask, r[mask])
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d.slice(~mask), margin)
 
         assert (loss == -1).sum() == 0, f"Loss tensor contains -1 values."
@@ -243,17 +287,17 @@ def query_ip_loss(data, class_embed, class_offset, rel_embed, scale_embed, margi
 
     
 @check_output_shape
-def query_pi_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_pi_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     # (('e', ('r', 'r')), ('e', ('r',))): 'pi',
     init, tails = data
-    box_c = E.embedding_pi(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_pi(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
     return Box.box_inclusion_score(box_c, box_d, margin)
     
 @check_output_shape
-def query_inp_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, transitive_ids, test):
+def query_inp_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, transitive_ids, test):
     # ((('e', ('r',)), ('e', ('r', 'n'))), ('r',))
     init, tails = data
     
@@ -262,39 +306,39 @@ def query_inp_loss(data, class_embed, class_offset, rel_embed, scale_embed, marg
     
 
     if transitive_ids is None:
-        box_c = E.embedding_inp(init, class_embed, class_offset, rel_embed, scale_embed, None)
+        box_c = E.embedding_inp(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, None, None)
         box_d = Box(d, d_offset)
         return Box.box_inclusion_score(box_c, box_d, margin)
     else:
         r = init[:, -1]
         mask = th.isin(r, transitive_ids)
 
-        box_c = E.embedding_inp(init, class_embed, class_offset, rel_embed, scale_embed, mask)
+        box_c = E.embedding_inp(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs = r[mask])
         box_d = Box(d, d_offset)
 
         r_embed = rel_embed(r[mask])
-        r_trans = th.abs(r_embed)/th.norm(r_embed, dim=1).unsqueeze(1)
+        r_trans = th.abs(r_embed) #/th.norm(r_embed, dim=1).unsqueeze(1)
         
         if test:
             loss = -1 * th.ones((init.shape[0], tails.shape[0]), device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d, margin, r_trans, mask, r[mask])
             box_d.center = box_d.center.permute(1, 0, 2)
             box_d.offset = box_d.offset.permute(1, 0, 2)
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d, margin)
  
         else:
             loss = -1 * th.ones(tails.shape[:2], device=init.device)
-            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans)
+            loss[mask] = Box.box_order_score(box_c.slice(mask), box_d.slice(mask), margin, r_trans, mask, r[mask])
             loss[~mask] = Box.box_inclusion_score(box_c.slice(~mask), box_d.slice(~mask), margin)
 
         assert (loss == -1).sum() == 0, f"Loss tensor contains -1 values."
     return loss
             
 @check_output_shape
-def query_pin_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_pin_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     # (('e', ('r', 'r')), ('e', ('r', 'n')))
     init, tails = data
-    box_c = E.embedding_pin(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_pin(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
@@ -302,10 +346,10 @@ def query_pin_loss(data, class_embed, class_offset, rel_embed, scale_embed, marg
 
 
 @check_output_shape
-def query_pni_loss(data, class_embed, class_offset, rel_embed, scale_embed, margin, test):
+def query_pni_loss(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, margin, test):
     # (('e', ('r', 'r', 'n')), ('e', ('r',)))
     init, tails = data
-    box_c = E.embedding_pni(init, class_embed, class_offset, rel_embed, scale_embed)
+    box_c = E.embedding_pni(init, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias)
     d = class_embed(tails)
     d_offset = th.abs(class_offset(tails))
     box_d = Box(d, d_offset)
