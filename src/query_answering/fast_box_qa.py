@@ -162,7 +162,7 @@ def load_data(data_path, saturated_data):
 @ck.option('--wandb_description', "-desc", default="transEL-QA", help="Description for wandb")
 @ck.option('--transitive', '-t', type=ck.Choice(['yes', 'no']), help='Use transitive relations')
 @ck.option('--saturated', '-sat', type=ck.Choice(['yes', 'no']), help='Use saturated data')
-@ck.option('--only_test', '-ot', is_flag=True, help='Only test'
+@ck.option('--only_test', '-ot', is_flag=True, help='Only test')
 def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs, device, no_sweep, wandb_description, transitive, saturated, only_test):
 
     wandb_logger = wandb.init(entity="ferzcam", project="transEL-QA", name=wandb_description)
@@ -182,8 +182,10 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs,
         learning_rate = wandb.config.learning_rate
         batch_size = wandb.config.batch_size
         num_negs = wandb.config.num_negs
-        transitive = wandb.config.transitive
-        saturated = wandb.config.saturated
+        # transitive = wandb.config.transitive
+        # saturated = wandb.config.saturated
+        transitive = "no"
+        saturated = "no"
         
     train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel = load_data(data_path, saturated)
 
@@ -411,6 +413,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs,
                     init = init.to(device)
                     pos_tail = pos_tail.to(device)
                     neg_tails = neg_tails.to(device)
+                    neg_tails = th.randint(0, nentity, neg_tails.shape, device=device)
                     subsampling_weights = subsampling_weights.to(device)
 
                     pos_logits = model(init, pos_tail, task_name).unsqueeze(1)
