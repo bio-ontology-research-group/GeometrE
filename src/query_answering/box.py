@@ -63,17 +63,17 @@ class Box():
         return Box(self.center[index_tensor], self.offset[index_tensor])
 
     
-    def translate(self, translation, factor, scaling, scaling_bias, transitive_mask=None, r_idxs=None):
+    def translate(self, translation, factor, scaling, scaling_bias, transitive_mask=None):
         if transitive_mask is not None:
             # translation[transitive_mask] = th.zeros_like(translation[transitive_mask]) + 1e-7
-            translation[transitive_mask] = th.abs(translation[transitive_mask]) #/th.norm(translation[transitive_mask], dim=-1).unsqueeze(-1)
-            r_range = th.arange(translation.shape[0], device=translation.device)[transitive_mask]
-            logger.debug(f"r_range: {r_range.shape}, r_idxs: {r_idxs.shape}")
-            mask = th.ones_like(translation)
-            logger.debug(f"In translation: r_idxs: {r_idxs.shape}, mask: {mask.shape}")
-            mask[transitive_mask] = 0
-            mask[r_range, r_idxs] = 1
-            assert mask[transitive_mask].sum() == len(r_idxs), f"Mask sum: {mask[transitive_mask].sum()}, r_idxs: {len(r_idxs)}"
+            translation[transitive_mask] = 0 #th.abs(translation[transitive_mask]) /th.norm(translation[transitive_mask], dim=-1).unsqueeze(-1)
+            # r_range = th.arange(translation.shape[0], device=translation.device)[transitive_mask]
+            # logger.debug(f"r_range: {r_range.shape}, r_idxs: {r_idxs.shape}")
+            # mask = th.ones_like(translation)
+            # logger.debug(f"In translation: r_idxs: {r_idxs.shape}, mask: {mask.shape}")
+            # mask[transitive_mask] = 0
+            # mask[r_range, r_idxs] = 1
+            # assert mask[transitive_mask].sum() == len(r_idxs), f"Mask sum: {mask[transitive_mask].sum()}, r_idxs: {len(r_idxs)}"
             
             # translation[transitive_mask][r_range, r_idxs] = 1e-7
             # translation = translation * mask
@@ -95,7 +95,7 @@ class Box():
     # @check_output_shape
     @staticmethod
     def box_inclusion_score(box_1, box_2, margin):
-        return Box.box_equiv_score(box_1, box_2, margin)
+        # return Box.box_equiv_score(box_1, box_2, margin)
         
         if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
             box_1.center = box_1.center.unsqueeze(1)
@@ -110,28 +110,18 @@ class Box():
 
         box_1_corner_loss = Box.corner_loss(box_1)
         box_2_corner_loss = Box.corner_loss(box_2)
-            
-        euc = th.abs(box_1.center - box_2.center)
-        logger.debug(f"euc: {euc.shape}")
-        
-        dst = th.linalg.norm(th.relu(euc + box_1.offset - box_2.offset + margin), axis=-1)
-        logger.debug(f"dst: {dst.shape}")
-        return dst + box_1_corner_loss + box_2_corner_loss
+
+        lower_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1)
+        upper_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
+
+        loss = (lower_loss + upper_loss) / 2 + (box_1_corner_loss + box_2_corner_loss) / 2
 
     @staticmethod
-    def box_order_score(box_1, box_2, margin, r_trans, transitive_mask, r_idxs):
+    def box_order_score(box_1, box_2, margin, r_trans, trans_mask, inverse=False, permute_back=False):
         logger.debug(f"{Box.__name__}-{Box.box_order_score.__name__} box_1 center: {box_1.center.shape}, box_2 center: {box_2.center.shape}, r_trans: {r_trans.shape}")
 
         r_trans = th.abs(r_trans)
-        mask = th.ones_like(r_trans)
-        # r_range = th.arange(len(r_trans), device=r_trans.device)
-        # mask[r_range, r_idxs] = 1
-        
-        # r_trans_sum = th.sum(r_trans, dim=-1)
-        # ones_like_r = th.ones_like(r_trans_sum)
-        # assert th.allclose(r_trans_sum, ones_like_r), f"Sum in r_trans: {r_trans_sum.sum()} not equal to sum in ones: {ones_like_r.sum()}"
-
-        
+                
         if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
             box_1.center = box_1.center.unsqueeze(1)
             box_1.offset = box_1.offset.unsqueeze(1)
@@ -144,76 +134,22 @@ class Box():
             box_2.center = box_2.center.permute(1, 0, 2)
             box_2.offset = box_2.offset.permute(1, 0, 2)
                         
-        # order_loss = th.linalg.norm(th.relu(box_1.center + box_1.offset - box_2.center - box_2.offset + margin), axis=-1)
         margin = 0.1
-        # order_loss = th.linalg.norm(th.relu(box_1.center + box_2.offset  - box_2.center - box_2.offset + margin), axis=-1)
-
-        # r_range = th.arange(box_1.center.shape[0])
-        # r_trans[r_range, r_idxs] = 1e-7
-        # box_1.center[r_range, r_idxs] = 1e-7
-        # box_1.offset[r_range, r_idxs] = 1e-7
-
-        # mask = th.zeros_like(box_1.center)
-
-        # if len(box_1.center.shape) == 2:
-            # x_range = th.arange(box_1.center.shape[0], device=box_1.center.device)
-            # mask[x_range, r_idxs] = 1
-
-        # elif len(box_1.center.shape) == 3:
-            # x_range = th.arange(box_1.center.shape[0], device=box_1.center.device)
-            # y_range = th.arange(box_1.center.shape[1], device=box_1.center.device)
-            # mask[x_range, y_range, r_idxs] = 1
-
-        # box_1_trans_center = box_1.center * mask
-        # box_1_trans_offset = box_1.offset * mask
-        # non_zero = (box_1_trans_center != 0).sum()
-        # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
-        # non_zero = (box_1_trans_offset != 0).sum()
-        # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
-        # box_1_non_trans_center = box_1.center * (1 - mask)
-        # box_1_non_trans_offset = box_1.offset * (1 - mask)
-
-        # mask = th.zeros_like(box_2.center)
-        # if len(box_2.center.shape) == 2:
-            # x_range = th.arange(box_2.center.shape[0])
-            # mask[x_range, r_idxs] = 1
-            
-        # elif len(box_2.center.shape) == 3:
-            # x_range = th.arange(box_2.center.shape[0])
-            # logger.debug(f"r_idxs: {r_idxs.shape}. Mask: {mask.shape}")
-            # logger.debug(f"x_range: {x_range.shape}, y_range: {y_range.shape}, r_idxs: {r_idxs.shape}")
-            # mask[x_range, :, r_idxs] = 1
-            
-        # box_2_trans_center = box_2.center * mask
-        # box_2_trans_offset = box_2.offset * mask
-        # box_2_non_trans_center = box_2.center * (1 - mask)
-        # box_2_non_trans_offset = box_2.offset * (1 - mask)
-
-        # non_trans_center_loss = th.linalg.norm(box_1_non_trans_center - box_2_non_trans_center, dim=-1, ord=2)
-        # non_trans_offset_loss = th.linalg.norm(box_1_non_trans_offset - box_2_non_trans_offset, dim=-1, ord=2)
-        
-        # margin = 2
-        # trans_loss = th.linalg.norm(th.relu(box_1_trans_center + box_1_trans_offset - box_2_trans_center - box_2_trans_offset + margin), axis=-1, ord=2)
-        # logger.debug(f"Non trans center loss: {non_trans_center_loss.mean()}. Non trans offset loss: {non_trans_offset_loss.mean()}. Trans loss: {trans_loss.mean()}")
-        
-        # order_loss = non_trans_center_loss + non_trans_offset_loss + trans_loss
-
-        order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
-        
-        # order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.lower + margin), axis=-1) original one
-        # lower_loss = th.linalg.norm(box_1.lower - box_2.lower + margin, axis=-1)
-        # order_margin = margin
-        # order_loss = th.linalg.norm(th.relu(box_1.center - box_2.center + order_margin), axis=-1)
+        if inverse:
+            order_loss = th.linalg.norm(th.relu(box_2.lower - box_1.lower + margin), dim=-1)
+            r_trans = - r_trans
+        else:
+            order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
 
         diff = (box_2.center - box_1.center)
-        # diff = diff/th.norm(diff, p=2, dim=-1).unsqueeze(-1)
-
-        # r_trans_sum = 
-        
+                
         angle_loss = 1 - th.sigmoid(th.sum(diff * r_trans, dim=-1))
-        # logger.debug(f"order_loss: {order_loss.sum()}, angle_loss: {angle_loss.sum()}")
-        # volume_loss = th.linalg.norm(th.relu(box_1.offset - box_2.offset + margin), axis=-1)
-        return order_loss  + angle_loss #+ lower_loss #+ volume_loss
+
+        if permute_back:
+            box_2.center = box_2.center.permute(1, 0, 2)
+            box_2.offset = box_2.offset.permute(1, 0, 2)
+        
+        return order_loss + angle_loss #+ lower_loss #+ volume_loss
 
     
     
