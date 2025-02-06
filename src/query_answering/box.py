@@ -111,11 +111,12 @@ class Box():
         box_1_corner_loss = Box.corner_loss(box_1)
         box_2_corner_loss = Box.corner_loss(box_2)
 
-        lower_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1)
+        lower_loss = th.linalg.norm(th.relu(box_2.lower - box_1.lower + margin), dim=-1)
         upper_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
 
         loss = (lower_loss + upper_loss) / 2 + (box_1_corner_loss + box_2_corner_loss) / 2
-
+        return loss
+    
     @staticmethod
     def box_order_score(box_1, box_2, margin, r_trans, trans_mask, inverse=False, permute_back=False):
         logger.debug(f"{Box.__name__}-{Box.box_order_score.__name__} box_1 center: {box_1.center.shape}, box_2 center: {box_2.center.shape}, r_trans: {r_trans.shape}")
@@ -134,7 +135,6 @@ class Box():
             box_2.center = box_2.center.permute(1, 0, 2)
             box_2.offset = box_2.offset.permute(1, 0, 2)
                         
-        margin = 0.1
         if inverse:
             order_loss = th.linalg.norm(th.relu(box_2.lower - box_1.lower + margin), dim=-1)
             r_trans = - r_trans

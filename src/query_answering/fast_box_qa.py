@@ -156,6 +156,7 @@ def load_data(data_path, saturated_data):
 @ck.option('--batch_size', '-bs', default=512, help='Batch size')
 @ck.option('--learning_rate', '-lr', default=0.001, help='Learning rate')
 @ck.option('--loss_margin', '-m', default=0.01, help='Loss Margin')
+@ck.option('--module_margin', '-mm', default=0.01, help='Module Margin')
 @ck.option('--num_negs', '-negs', default=1, help='Number of negative samples')
 @ck.option('--device', '-dev', default='cuda', help='Device to use')
 @ck.option('--no_sweep', '-ns', is_flag=True, help='Do not use wandb sweep')
@@ -163,13 +164,14 @@ def load_data(data_path, saturated_data):
 @ck.option('--transitive', '-t', type=ck.Choice(['yes', 'no']), help='Use transitive relations')
 @ck.option('--saturated', '-sat', type=ck.Choice(['yes', 'no']), help='Use saturated data')
 @ck.option('--only_test', '-ot', is_flag=True, help='Only test')
-def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs, device, no_sweep, wandb_description, transitive, saturated, only_test):
+def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_margin, num_negs, device, no_sweep, wandb_description, transitive, saturated, only_test):
 
     wandb_logger = wandb.init(entity="ferzcam", project="transEL-QA", name=wandb_description)
                      
     if no_sweep:
         wandb_logger.log({"embed_dim": embed_dim,
                           "loss_margin": loss_margin,
+                          "module_margin": module_margin,
                           "learning_rate": learning_rate,
                           "batch_size": batch_size,
                           "num_negs": num_negs,
@@ -179,6 +181,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs,
     else:
         embed_dim = wandb.config.embed_dim
         loss_margin = wandb.config.loss_margin
+        module_margin = wandb.config.module_margin
         learning_rate = wandb.config.learning_rate
         batch_size = wandb.config.batch_size
         num_negs = wandb.config.num_negs
@@ -298,7 +301,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, num_negs,
     else:
         raise ValueError("Transitive must be either 'yes' or 'no'")
     
-    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=0).to(device)
+    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=module_margin).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {total_params}")

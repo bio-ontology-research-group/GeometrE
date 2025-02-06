@@ -14,7 +14,7 @@ def embedding_1p(data, class_embed, class_offset, rel_embed, rel_factor, scale_e
     r_factor = rel_factor(data[:, 1])
     r_scale = scale_embed(data[:, 1])
     r_scale_bias = scale_bias(data[:, 1])
-    return Box(c, c_offset).translate(r_embed, r_factor, r_scale, r_scale_bias, mask, r_idxs=r_idxs)
+    return Box(c, c_offset).translate(r_embed, r_factor, r_scale, r_scale_bias, mask)
                                 
 def embedding_2p(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs):
     c = class_embed(data[:, 0])
@@ -29,7 +29,7 @@ def embedding_2p(data, class_embed, class_offset, rel_embed, rel_factor, scale_e
     r_2_scale_bias = scale_bias(data[:, 2])
 
     box = Box(c, c_offset).translate(r_1_embed, r_1_factor, r_1_scale, r_1_scale_bias)
-    box = box.translate(r_2_embed, r_2_factor, r_2_scale, r_2_scale_bias, mask, r_idxs=r_idxs)
+    box = box.translate(r_2_embed, r_2_factor, r_2_scale, r_2_scale_bias, mask)
     return box
                                 
 def embedding_3p(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias, mask, r_idxs):
@@ -50,7 +50,7 @@ def embedding_3p(data, class_embed, class_offset, rel_embed, rel_factor, scale_e
     
     box = Box(c, c_offset).translate(r_1_embed, r_1_factor, r_1_scale, r_1_scale_bias)
     box = box.translate(r_2_embed, r_2_factor, r_2_scale, r_2_scale_bias)
-    box = box.translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask, r_idxs=r_idxs)
+    box = box.translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask)
     return box
 
 
@@ -172,7 +172,7 @@ def embedding_ip(data, class_embed, class_offset, rel_embed, rel_factor, scale_e
     box_c_1 = Box(c_1, c_1_offset).translate(r_1_embed, r_1_factor, r_1_scale, r_1_scale_bias)
     box_c_2 = Box(c_2, c_2_offset).translate(r_2_embed, r_2_factor, r_2_scale, r_2_scale_bias)
 
-    box = Box.intersection(box_c_1, box_c_2).translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask, r_idxs=r_idxs)
+    box = Box.intersection(box_c_1, box_c_2).translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask)
     
     return box
 
@@ -226,7 +226,7 @@ def embedding_inp(data, class_embed, class_offset, rel_embed, rel_factor, scale_
     box_c_1 = Box(c_1, c_1_offset).translate(r_1_embed, r_1_factor, r_1_scale, r_1_scale_bias)
     box_c_2 = Box(c_2, c_2_offset).translate(r_2_embed, r_2_factor, r_2_scale, r_2_scale_bias)
 
-    box = Box.intersection_with_negation(2, box_c_1, box_c_2).translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask, r_idxs=r_idxs)
+    box = Box.intersection_with_negation(2, box_c_1, box_c_2).translate(r_3_embed, r_3_factor, r_3_scale, r_3_scale_bias, mask)
     return box
                                                                 
 def embedding_pin(data, class_embed, class_offset, rel_embed, rel_factor, scale_embed, scale_bias):
