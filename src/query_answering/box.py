@@ -50,48 +50,55 @@ class Box():
             assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
         self.center = center
         self.offset = offset
-        
+                
     @property
     def lower(self):
         return self.center - self.offset
+                                                    
 
     @property
     def upper(self):
         return self.center + self.offset
-
+                                                    
     def slice(self, index_tensor):
         return Box(self.center[index_tensor], self.offset[index_tensor])
 
     
-    def translate(self, translation, factor, scaling, scaling_bias, transitive_mask=None):
-        if transitive_mask is not None:
-            # translation[transitive_mask] = th.zeros_like(translation[transitive_mask]) + 1e-7
-            translation[transitive_mask] = 0 #th.abs(translation[transitive_mask]) /th.norm(translation[transitive_mask], dim=-1).unsqueeze(-1)
-            # r_range = th.arange(translation.shape[0], device=translation.device)[transitive_mask]
-            # logger.debug(f"r_range: {r_range.shape}, r_idxs: {r_idxs.shape}")
-            # mask = th.ones_like(translation)
-            # logger.debug(f"In translation: r_idxs: {r_idxs.shape}, mask: {mask.shape}")
-            # mask[transitive_mask] = 0
-            # mask[r_range, r_idxs] = 1
-            # assert mask[transitive_mask].sum() == len(r_idxs), f"Mask sum: {mask[transitive_mask].sum()}, r_idxs: {len(r_idxs)}"
-            
-            # translation[transitive_mask][r_range, r_idxs] = 1e-7
-            # translation = translation * mask
-            # non_zero = (translation[transitive_mask] != 0).sum()
-
-            factor[transitive_mask] = 1
-            # scaling[transitive_mask] = 1
-            # scaling_bias[transitive_mask] = 0
-            
-            # assert non_zero == len(r_idxs), f"Non zero: {non_zero}, r_idxs: {len(r_idxs)}"
-            # scaling[transitive_mask] = 1
-            # scaling[r_range, r_idxs] = 1
-            # scaling[transitive_mask] = 1 #th.sigmoid(scaling[transitive_mask]) + 1
+    def translate(self, translation, factor, scaling, scaling_bias, transitive_ids=None, inverse_ids=None, r_ids=None, pseudo_translation=False):
+        if transitive_ids is not None:
+            transitive_mask = th.isin(r_ids, transitive_ids)
+            if pseudo_translation:
+                translation[transitive_mask] = 0
+                factor[transitive_mask] = 1
+                scaling[transitive_mask] = 1
+                scaling_bias[transitive_mask] = 0
+            else:
+                inverse_mask = th.isin(r_ids, inverse_ids)
+                trans_inv = transitive_mask & inverse_mask
+                trans_non_inv = transitive_mask & ~inverse_mask
+                translation[trans_non_inv] = th.abs(translation[trans_non_inv])
+                translation[trans_inv] = - th.abs(translation[trans_inv])
+                
         new_center = self.center * factor + translation
         new_offset = th.abs(self.offset * th.abs(scaling) + scaling_bias) # NOTE important to provide a positive offset here.
  
         return Box(new_center, new_offset)
-        
+
+    def translate2(self, translation, factor, scaling, scaling_bias, transitive_ids=None, inverse_ids=None, r_ids=None):
+        if transitive_ids is not None:
+            transitive_mask = th.isin(r_ids, transitive_ids)
+            translation[transitive_mask] = 0
+                                                
+            translation[transitive_mask] = 0
+            factor[transitive_mask] = 1
+            scaling[transitive_mask] = 1
+            scaling_bias[transitive_mask] = 0
+                                                                                                
+        new_center = self.center * factor + translation
+        new_offset = th.abs(self.offset * th.abs(scaling) + scaling_bias) # NOTE important to provide a positive offset here.
+ 
+        return Box(new_center, new_offset)
+
     # @check_output_shape
     @staticmethod
     def box_inclusion_score(box_1, box_2, margin):
@@ -110,11 +117,12 @@ class Box():
 
         box_1_corner_loss = Box.corner_loss(box_1)
         box_2_corner_loss = Box.corner_loss(box_2)
-
-        lower_loss = th.linalg.norm(th.relu(box_2.lower - box_1.lower + margin), dim=-1)
-        upper_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
+                        
+        lower_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1, ord=1)
+        upper_loss = th.linalg.norm(th.relu(box_2.upper - box_1.upper + margin), dim=-1, ord=1)
 
         loss = (lower_loss + upper_loss) / 2 + (box_1_corner_loss + box_2_corner_loss) / 2
+
         return loss
     
     @staticmethod
@@ -138,10 +146,11 @@ class Box():
         if inverse:
             order_loss = th.linalg.norm(th.relu(box_2.lower - box_1.lower + margin), dim=-1)
             r_trans = - r_trans
+            diff = box_1.center - box_2.center
         else:
             order_loss = th.linalg.norm(th.relu(box_1.upper - box_2.upper + margin), dim=-1)
-
-        diff = (box_2.center - box_1.center)
+            diff = box_2.center - box_1.center
+        
                 
         angle_loss = 1 - th.sigmoid(th.sum(diff * r_trans, dim=-1))
 
