@@ -75,6 +75,7 @@ def seed_everything(seed=42):
 
 
 transitive_roles = {"WN18RR-QA": ["+_hypernym", "+_has_part"],
+                    "NELL-betae": [],
                     # "WN18RR-QA": ["+_hypernym", "+_has_part", "-_hypernym", "-_has_part"],
                     # "fb15k237":["http://www.w3.org/medicine/symptom/symptom_of", "http://www.w3.org/location/location/contains"],
                     # "yago310": ["isLocatedIn"]

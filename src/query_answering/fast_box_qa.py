@@ -151,7 +151,8 @@ def load_data(data_path, saturated_data):
 
 # @ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/FB15k-237-betae', help='Path to data directory')
 @ck.command()
-@ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/WN18RR-QA', help='Path to data directory')
+# @ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/WN18RR-QA', help='Path to data directory')
+@ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/NELL-betae', help='Path to data directory')
 @ck.option('--embed_dim', '-dim', default=400, help='Embedding dimension')
 @ck.option('--batch_size', '-bs', default=512, help='Batch size')
 @ck.option('--learning_rate', '-lr', default=0.001, help='Learning rate')
