@@ -11,7 +11,7 @@ from fast_dataloader import construct_train_dataset, TestDataset, FastTensorWith
 from module import ELBEQAModule
 from tqdm import tqdm
 from evaluators import QAEvaluator
-from util import transitive_roles
+from util import transitive_roles, inverse_roles
 import wandb
 import collections
 import logging
@@ -75,13 +75,17 @@ def to_str(metrics, metric_names=["mrr", "f_mrr", "hits@1", "f_hits@1", "hits@3"
         string += "\n"
     return string
 
-def group_queries_and_answers_by_task(queries, *answers_list):
+def group_queries_and_answers_by_task(queries, *answers_list, transitive_only=False):
+    logger.info(f"Grouping queries and answers by task. Transitive only: {transitive_only}")
     queries_dict = dict()
     all_answers_dict = [dict() for _ in range(len(answers_list))]
 
+    transitive_tasks = ["1p", "2p", "3p", "ip", "inp"]
     for query_structure in queries:
+        
         short_name = query_name_dict[query_structure]
-
+        if transitive_only and not short_name in transitive_tasks:
+            continue
         queries_dict[short_name] = sorted(list(queries[query_structure]))
         for i, answers in enumerate(answers_list):
             all_answers_dict[i][short_name] = dict()
@@ -107,16 +111,18 @@ def load_data(data_path, saturated_data):
 
     train_queries = pkl.load(open(os.path.join(data_path, "train-queries.pkl"), 'rb'))
     train_answers = pkl.load(open(os.path.join(data_path, "train-answers.pkl"), 'rb'))
-    valid_queries = pkl.load(open(os.path.join(data_path, "valid-queries.pkl"), 'rb'))
+    
     
     if saturated_data == "yes":
+        valid_queries = pkl.load(open(os.path.join(data_path, "saturated-valid-queries.pkl"), 'rb'))
         valid_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-hard-answers.pkl"), 'rb'))
         valid_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-valid-easy-answers.pkl"), 'rb'))
-        test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
+        test_queries = pkl.load(open(os.path.join(data_path, "saturated-test-queries.pkl"), 'rb'))
         test_hard_answers = pkl.load(open(os.path.join(data_path, "saturated-test-hard-answers.pkl"), 'rb'))
         test_easy_answers = pkl.load(open(os.path.join(data_path, "saturated-test-easy-answers.pkl"), 'rb'))
 
     elif saturated_data == "no":
+        valid_queries = pkl.load(open(os.path.join(data_path, "valid-queries.pkl"), 'rb'))
         valid_hard_answers = pkl.load(open(os.path.join(data_path, "valid-hard-answers.pkl"), 'rb'))
         valid_easy_answers = pkl.load(open(os.path.join(data_path, "valid-easy-answers.pkl"), 'rb'))
         test_queries = pkl.load(open(os.path.join(data_path, "test-queries.pkl"), 'rb'))
@@ -144,8 +150,11 @@ def load_data(data_path, saturated_data):
         logger.info(f"Including {short_name} in tasks")
 
     train_queries, train_answers = group_queries_and_answers_by_task(train_queries, train_answers)
-    valid_queries, valid_easy_answers, valid_hard_answers = group_queries_and_answers_by_task(valid_queries, valid_easy_answers, valid_hard_answers)
-    test_queries, test_easy_answers, test_hard_answers = group_queries_and_answers_by_task(test_queries, test_easy_answers, test_hard_answers)
+    transitive_only = False
+    if saturated_data == "yes":
+        transitive_only = True
+    valid_queries, valid_easy_answers, valid_hard_answers = group_queries_and_answers_by_task(valid_queries, valid_easy_answers, valid_hard_answers, transitive_only=transitive_only)
+    test_queries, test_easy_answers, test_hard_answers = group_queries_and_answers_by_task(test_queries, test_easy_answers, test_hard_answers, transitive_only=transitive_only)
     
     return train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel
 
@@ -274,34 +283,44 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_ma
     test_dataset_1p = TestDataset(test_queries['1p'], test_easy_answers['1p'], test_hard_answers['1p'])
     test_dataset_2p = TestDataset(test_queries['2p'], test_easy_answers['2p'], test_hard_answers['2p'])
     test_dataset_3p = TestDataset(test_queries['3p'], test_easy_answers['3p'], test_hard_answers['3p'])
-    test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
-    test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
-    test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
-    test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
-    test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
     test_dataset_ip = TestDataset(test_queries['ip'], test_easy_answers['ip'], test_hard_answers['ip'])
     test_dataset_inp = TestDataset(test_queries['inp'], test_easy_answers['inp'], test_hard_answers['inp'])
-    test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
-    test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
-
     test_datasets = {"1p": test_dataset_1p, "2p": test_dataset_2p, "3p": test_dataset_3p,
-                     "2i": test_dataset_2i, "3i": test_dataset_3i,
-                     "2in": test_dataset_2in, "3in": test_dataset_3in,
-                     "pi": test_dataset_pi, "ip": test_dataset_ip,
-                     "inp": test_dataset_inp, "pin": test_dataset_pin, "pni": test_dataset_pni
+                     "ip": test_dataset_ip,
+                     "inp": test_dataset_inp
                      }
+
+    if saturated == "no":
+        test_dataset_2i = TestDataset(test_queries['2i'], test_easy_answers['2i'], test_hard_answers['2i'])
+        test_dataset_3i = TestDataset(test_queries['3i'], test_easy_answers['3i'], test_hard_answers['3i'])
+        test_dataset_2in = TestDataset(test_queries['2in'], test_easy_answers['2in'], test_hard_answers['2in'])
+        test_dataset_3in = TestDataset(test_queries['3in'], test_easy_answers['3in'], test_hard_answers['3in'])
+        test_dataset_pi = TestDataset(test_queries['pi'], test_easy_answers['pi'], test_hard_answers['pi'])
+        test_dataset_pin = TestDataset(test_queries['pin'], test_easy_answers['pin'], test_hard_answers['pin'])
+        test_dataset_pni = TestDataset(test_queries['pni'], test_easy_answers['pni'], test_hard_answers['pni'])
+        
+        test_datasets["2i"] = test_dataset_2i
+        test_datasets["3i"] = test_dataset_3i
+        test_datasets["2in"] = test_dataset_2in
+        test_datasets["3in"] = test_dataset_3in
+        test_datasets["pi"] = test_dataset_pi
+        test_datasets["pin"] = test_dataset_pin
+        test_datasets["pni"] = test_dataset_pni
     
 
     transitive_dataset_roles = transitive_roles[dataset_name]
+    inverse_dataset_roles = inverse_roles[dataset_name]
     logger.info(f"Transitive roles: {transitive_dataset_roles}")
     if transitive == "yes":
         transitive_ids = th.tensor([rel2id[rel] for rel in transitive_dataset_roles]).to(device)
+        inverse_ids = th.tensor([rel2id[rel] for rel in inverse_dataset_roles]).to(device)
     elif transitive == "no":
         transitive_ids = None
+        inverse_ids = None
     else:
         raise ValueError("Transitive must be either 'yes' or 'no'")
     
-    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, margin=module_margin).to(device)
+    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, inverse_ids=inverse_ids, margin=module_margin).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {total_params}")

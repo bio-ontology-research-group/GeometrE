@@ -166,6 +166,7 @@ class BaseRankingEvaluator():
                 logger.debug("Number of hard answers: %d", len(hard_batch_answers))
                 logger.debug("Preds shape: %s", scores[i].shape)
                 preds = scores[i].repeat(len(hard_batch_answers), 1)
+                logger.debug(f"preds: NaN values {th.isnan(preds).sum()} - Inf values {th.isinf(preds).sum()}. Min value: {preds.min()}. Max value: {preds.max()}.")
                 preds[:, anchor_node] = 10000
                 logger.debug("Preds shape: %s", preds.shape)
                 
