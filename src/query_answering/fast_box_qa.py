@@ -320,7 +320,7 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_ma
     else:
         raise ValueError("Transitive must be either 'yes' or 'no'")
     
-    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, inverse_ids=inverse_ids, margin=module_margin).to(device)
+    model = ELBEQAModule(nentity, nrelation, embed_dim=embed_dim, transitive_ids=transitive_ids, inverse_ids=inverse_ids, gamma=loss_margin).to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {total_params}")
@@ -393,29 +393,23 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_ma
                 neg_logits = model(init, neg_tails, "1p")
 
                 # loss_margin = 20 #0.01 #20 #10
-                loss_1p = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
-                if transitive_ids is not None:
-                    r = init[:, -1]
-                    mask = th.isin(r, transitive_ids)
+                old = False
+                if old:
+                    loss_1p = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
+                    loss += loss_1p.sum()/subsampling_weights.sum()
+                else:
+                    negative_score = F.logsigmoid(-neg_logits).mean(dim=1)
+                    positive_score = F.logsigmoid(pos_logits).squeeze(dim=1)
+                    positive_sample_loss = - (subsampling_weights * positive_score).sum()
+                    negative_sample_loss = - (subsampling_weights * negative_score).sum()
+                    positive_sample_loss /= subsampling_weights.sum()
+                    negative_sample_loss /= subsampling_weights.sum()
 
-                    trans_factor = 5
-                    loss_1p[mask] = trans_factor * loss_1p[mask]
+                    loss_1p = (positive_sample_loss + negative_sample_loss)/2
+                    loss += loss_1p
                     
-                    trans_logits_pos = pos_logits[mask].mean()
-                    non_trans_logits_pos = pos_logits[~mask].mean()
-                    trans_logits_neg = neg_logits[mask].mean()
-                    non_trans_logits_neg = neg_logits[~mask].mean()
-                    logger.debug(f"Trans logits. Pos: {trans_logits_pos}, Neg: {trans_logits_neg}")
-                    logger.debug(f"Non Trans logits. Pos: {non_trans_logits_pos}, Neg: {non_trans_logits_neg}")
                 
-            
-                    
-                    trans_loss = loss_1p[mask].sum()/subsampling_weights[mask].sum()
-                    non_trans_loss = loss_1p[~mask].sum()/subsampling_weights[~mask].sum()
-                    logger.debug(f"Loss. Trans: {trans_loss}, Non Trans: {non_trans_loss}")
-
                 
-                loss += loss_1p.sum()/subsampling_weights.sum() 
                 
                 
                 # pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
@@ -449,10 +443,19 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_ma
                         # loss_margin = 0.01
                     # else:
                         # loss_margin = 0.01 #20 #10
-
-                    loss_task = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
-                    loss += loss_task.sum()/subsampling_weights.sum()
-
+                    if old:
+                        loss_task = - F.logsigmoid(neg_logits - pos_logits - loss_margin) * subsampling_weights
+                        loss += loss_task.sum()/subsampling_weights.sum()
+                    else:
+                        negative_score = F.logsigmoid(-neg_logits).mean(dim=1)
+                        positive_score = F.logsigmoid(pos_logits).squeeze(dim=1)
+                        positive_sample_loss = - (subsampling_weights * positive_score).sum()
+                        negative_sample_loss = - (subsampling_weights * negative_score).sum()
+                        positive_sample_loss /= subsampling_weights.sum()
+                        negative_sample_loss /= subsampling_weights.sum()
+                        loss += (positive_sample_loss + negative_sample_loss)/2
+                        
+                    
                     # pos_loss = - F.logsigmoid(loss_margin - pos_logits) * subsampling_weights
                     # neg_loss = - F.logsigmoid(neg_logits - loss_margin) * subsampling_weights#.unsqueeze(1)
                     # pos_loss = pos_loss.sum()/subsampling_weights.sum()
