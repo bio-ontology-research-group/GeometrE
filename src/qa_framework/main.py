@@ -73,12 +73,12 @@ def parse_args(args=None):
     parser.add_argument('-b', '--batch_size', default=1024, type=int, help="batch size of queries")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
-    parser.add_argument('-cpu', '--cpu_num', default=10, type=int, help="used to speed up torch.dataloader")
+    parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
-    parser.add_argument('--max_steps', default=100000, type=int, help="maximum iterations to train")
+    parser.add_argument('--max_steps', default=200000, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
     
-    parser.add_argument('--save_checkpoint_steps', default=50000, type=int, help="save checkpoints every xx steps")
+    parser.add_argument('--save_checkpoint_steps', default=10000, type=int, help="save checkpoints every xx steps")
     parser.add_argument('--valid_steps', default=10000, type=int, help="evaluate validation queries every xx steps")
     parser.add_argument('--log_steps', default=100, type=int, help='train log every xx steps')
     parser.add_argument('--test_log_steps', default=1000, type=int, help='valid/test log every xx steps')
@@ -171,8 +171,8 @@ def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, m
         num_query_structures += 1
 
     for metric in average_metrics:
-        wb_logger.log({f"avg_{metric}": average_metrics[metric]})
         average_metrics[metric] /= num_query_structures
+        wb_logger.log({f"avg_{metric}": average_metrics[metric]})
         writer.add_scalar("_".join([mode, 'average', metric]), average_metrics[metric], step)
         all_metrics["_".join(["average", metric])] = average_metrics[metric]
     log_metrics('%s average'%mode, step, average_metrics)
@@ -219,7 +219,7 @@ def load_data(args, tasks):
     return train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers
 
 def main(args):
-
+    args.cuda = True
     wandb_logger = wandb.init(entity="ferzcam", project="box_qa", name=args.description)
                      
     if args.no_sweep:
@@ -259,7 +259,7 @@ def main(args):
     print ("overwritting args.save_path")
     args.save_path = os.path.join(prefix, args.data_path.split('/')[-1], args.tasks, args.geo)
     if args.geo in ['pure_box']:
-        tmp_str = "g-{}-mode".format(args.gamma)
+        tmp_str = "hid-{}-g-{}-lr-{}-bs-{}-ns-{}-trans-{}".format(args.hidden_dim, args.gamma, args.learning_rate, args.batch_size, args.negative_sample_size, args.transitive)
     elif args.geo in ['vec']:
         tmp_str = "g-{}".format(args.gamma)
     elif args.geo == 'beta':
