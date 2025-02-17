@@ -39,16 +39,16 @@ query_name_dict = {('e',('r',)): '1p',
                    ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
                    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n',)): '2u-DM',
                    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n', 'r')): 'up-DM',
-                   ('e', ('r', 't')): '1pt',
-                   ('e', ('r', 'r', 't')): '2pt',
-                   ('e', ('r', 'r', 'r', 't')): '3pt',
-                   ((('e', ('r',)), ('e', ('r',))), ('r', 't')): 'ipt',
-                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r', 't')): 'inpt',
-                   ('e', ('r', 'i')): '1pi',
-                   ('e', ('r', 'r', 'i')): '2pi',
-                   ('e', ('r', 'r', 'r', 'i')): '3pi',
-                   ((('e', ('r',)), ('e', ('r',))), ('r', 'i')): 'ipi',
-                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r', 'i')): 'inpi',
+                   ('e', ('r', 't')): '1pto',
+                   ('e', ('r', 'r', 't')): '2pto',
+                   ('e', ('r', 'r', 'r', 't')): '3pto',
+                   ((('e', ('r',)), ('e', ('r',))), ('r', 't')): 'ipto',
+                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r', 't')): 'inpto',
+                   ('e', ('r', 'i')): '1pti',
+                   ('e', ('r', 'r', 'i')): '2pti',
+                   ('e', ('r', 'r', 'r', 'i')): '3pti',
+                   ((('e', ('r',)), ('e', ('r',))), ('r', 'i')): 'ipti',
+                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r', 'i')): 'inpti',
                    
                 }
 name_query_dict = {value: key for key, value in query_name_dict.items()}
@@ -239,7 +239,7 @@ def main(args):
         args.transitive = wandb.config.transitive
 
     if args.transitive == 'yes':
-        args.tasks += '.1pt.1pi.2pt.2pi.3pt.3pi.ipt.ipi.inpt.inpi'
+        args.tasks += '.1pto.1pti.2pto.2pti.3pto.3pti.ipto.ipti.inpto.inpti'
         
     
     set_global_seed(args.seed)
@@ -419,7 +419,7 @@ def main(args):
     logging.info('init_step = %d' % init_step)
     if args.do_train:
         logging.info('Start Training...')
-        logging.info('learning_rate = %d' % current_learning_rate)
+        logging.info('learning_rate = %f' % current_learning_rate)
     logging.info('batch_size = %d' % args.batch_size)
     logging.info('hidden_dim = %d' % args.hidden_dim)
     logging.info('gamma = %f' % args.gamma)
