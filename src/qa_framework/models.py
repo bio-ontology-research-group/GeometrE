@@ -245,7 +245,7 @@ class KGReasoning(nn.Module):
         elif inverse:
             logit = Box.box_order_score(box_embedding, entity_embedding, 0, inverse=True)
         else:
-            logit = self.gamma - Box.box_inclusion_score(box_embedding, entity_embedding, 0)
+            logit = Box.box_inclusion_score(box_embedding, entity_embedding, 0)
         
         return self.gamma - logit
 
@@ -261,11 +261,11 @@ class KGReasoning(nn.Module):
                 boxes = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
                 all_union_boxes.append(boxes)
                 all_union_idxs.extend(batch_idxs_dict[query_structure])
-            elif 't' in self.query_name_dict[query_structure]:
+            elif 'to' in self.query_name_dict[query_structure]:
                 boxes = self.embed_query_box(batch_queries_dict[query_structure], query_type)
                 all_transitive_boxes.append(boxes)
                 all_transitive_idxs.extend(batch_idxs_dict[query_structure])
-            elif 'i' in self.query_name_dict[query_structure]:
+            elif 'ti' in self.query_name_dict[query_structure]:
                 boxes = self.embed_query_box(batch_queries_dict[query_structure], query_type)
                 all_inverse_boxes.append(boxes)
                 all_inverse_idxs.extend(batch_idxs_dict[query_structure])

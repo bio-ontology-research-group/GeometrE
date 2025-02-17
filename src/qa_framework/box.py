@@ -137,9 +137,9 @@ class Box():
             box_2.offset = box_2.offset.permute(1, 0, 2)
                         
         if inverse:
-            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1)
+            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1, ord=1)
         else:
-            order_loss = th.linalg.norm(th.relu(box_2.upper - box_1.upper + margin), dim=-1)
+            order_loss = th.linalg.norm(th.relu(box_2.upper - box_1.upper + margin), dim=-1, ord=1)
             
                 
         if permute_back:
