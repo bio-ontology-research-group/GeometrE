@@ -70,6 +70,7 @@ def parse_args(args=None):
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int, help="negative entities sampled per query")
     parser.add_argument('-d', '--hidden_dim', default=500, type=int, help="embedding dimension")
     parser.add_argument('-g', '--gamma', default=12.0, type=float, help="margin in the loss")
+    parser.add_argument('-a', '--alpha', default=0.5, type=float, help="balance the in_box dist and out_box dist")
     parser.add_argument('-b', '--batch_size', default=1024, type=int, help="batch size of queries")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
@@ -225,6 +226,7 @@ def main(args):
     if args.no_sweep:
         wandb_logger.log({"hidden_dim": args.hidden_dim,
                           "gamma": args.gamma,
+                          "alpha": args.alpha,
                           "learning_rate": args.learning_rate,
                           "batch_size": args.batch_size,
                           "negative_sample_size": args.negative_sample_size,
@@ -233,6 +235,7 @@ def main(args):
     else:
         args.hidden_dim = wandb.config.hidden_dim
         args.gamma = wandb.config.gamma
+        args.alpha = wandb.config.alpha
         args.learning_rate = wandb.config.learning_rate
         args.batch_size = wandb.config.batch_size
         args.negative_sample_size = wandb.config.negative_sample_size
@@ -368,6 +371,7 @@ def main(args):
         nrelation=nrelation,
         hidden_dim=args.hidden_dim,
         gamma=args.gamma,
+        alpha=args.alpha,
         geo=args.geo,
         use_cuda = args.cuda,
         box_mode=eval_tuple(args.box_mode),
@@ -438,7 +442,7 @@ def main(args):
                 log = model.train_step(model, optimizer, train_other_iterator, args, step)
                 for metric in log:
                     writer.add_scalar('other_'+metric, log[metric], step)
-                log = model.train_step(model, optimizer, train_path_iterator, args, step)
+                # log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
             training_logs.append(log)
 
@@ -471,8 +475,17 @@ def main(args):
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
-                    metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
+                    if metric in ["disjoint", "total_boxes", "corner_loss"]:
+                        non_zeros = [log[metric] for log in training_logs if log[metric] > 0]
+                        if len(non_zeros) > 0:
+                            metrics[metric] = sum(non_zeros) / len(non_zeros)
+                        else:
+                            metrics[metric] = 0
+                    else:
+                        metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
 
+
+                    
                 log_metrics('Training average', step, metrics)
                 training_logs = []
 
@@ -490,7 +503,7 @@ def main(args):
 
     if args.do_test:
         logging.info('Evaluating on Test Dataset...')
-        test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer)
+        test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
 
     logging.info("Training finished!!")
 

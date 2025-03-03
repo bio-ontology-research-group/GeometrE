@@ -26,10 +26,9 @@ def Identity(x):
     return x
 
 class KGReasoning(nn.Module):
-    def __init__(self, nentity, nrelation, hidden_dim, gamma, 
-                 geo, test_batch_size=1,
-                 box_mode=None, use_cuda=False,
-                 query_name_dict=None, beta_mode=None):
+    def __init__(self, nentity, nrelation, hidden_dim, gamma, alpha,
+                 geo, test_batch_size=1, box_mode=None,
+                 use_cuda=False, query_name_dict=None, beta_mode=None):
         super(KGReasoning, self).__init__()
         self.nentity = nentity
         self.nrelation = nrelation
@@ -48,12 +47,16 @@ class KGReasoning(nn.Module):
             requires_grad=False
         )
 
+        self.alpha = nn.Parameter(
+            torch.Tensor([alpha]),
+            requires_grad=False
+        )
+
         self.embedding_range = nn.Parameter(
             torch.Tensor([(self.gamma.item() + self.epsilon) / hidden_dim]), 
             requires_grad=False
         )
         
-                
         self.entity_embedding = nn.Embedding(nentity, self.entity_dim)
         nn.init.uniform_(
             tensor=self.entity_embedding.weight,
@@ -67,14 +70,14 @@ class KGReasoning(nn.Module):
             a=0., 
             b=self.embedding_range.item()
         )
-        
-        # self.relation_embedding = nn.Embedding(nrelation, self.relation_dim)
-        # nn.init.uniform_(
-            # tensor=self.relation_embedding.weight,
-            # a=-self.embedding_range.item(), 
-            # b=self.embedding_range.item()
-        # )
 
+        self.answer_embedding = nn.Embedding(nentity, self.entity_dim)
+        nn.init.uniform_(
+            tensor=self.answer_embedding.weight,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+        
         self.translation_mul = nn.Embedding(nrelation, self.relation_dim)
         nn.init.uniform_(
             tensor=self.translation_mul.weight,
@@ -103,10 +106,16 @@ class KGReasoning(nn.Module):
             b=self.embedding_range.item()
         )
 
+        self.inter_translation = nn.Embedding(nrelation, self.relation_dim)
+        nn.init.uniform_(
+            tensor=self.inter_translation.weight,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
         
     def forward(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict)
-
 
 
     def embedding_1p(self, data):
@@ -138,22 +147,22 @@ class KGReasoning(nn.Module):
         return E.embedding_3pi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
 
     def embedding_2i(self, data):
-        return E.embedding_2i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_2i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_3i(self, data):
-        return E.embedding_3i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_3i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_2in(self, data):
-        return E.embedding_2in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_2in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
     
     def embedding_3in(self, data):
-        return E.embedding_3in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_3in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_pi(self, data):
-        return E.embedding_pi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_pi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_ip(self, data):
-        return E.embedding_ip(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_ip(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_ipt(self, data):
         return E.embedding_ipt(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
@@ -162,7 +171,7 @@ class KGReasoning(nn.Module):
         return E.embedding_ipi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
 
     def embedding_inp(self, data):
-        return E.embedding_inp(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_inp(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_inpt(self, data):
         return E.embedding_inpt(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
@@ -171,14 +180,14 @@ class KGReasoning(nn.Module):
         return E.embedding_inpi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
 
     def embedding_inp(self, data):
-        return E.embedding_inp(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_inp(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     
     def embedding_pin(self, data):
-        return E.embedding_pin(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_pin(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
 
     def embedding_pni(self, data):
-        return E.embedding_pni(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add)
+        return E.embedding_pni(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.inter_translation)
     
     def get_embedding_fn(self, task_name):
         """
@@ -239,28 +248,32 @@ class KGReasoning(nn.Module):
         elif self.query_name_dict[query_structure] == 'up-DNF':
             return ('e', ('r', 'r'))
 
-    def cal_logit_box(self, entity_embedding, box_embedding, transitive=False, inverse=False):
+    def cal_logit_box(self, entity_embedding, box_embedding, transitive=False, inverse=False, negative=False):
         if transitive:
             logit = Box.box_order_score(box_embedding, entity_embedding, 0)
         elif inverse:
             logit = Box.box_order_score(box_embedding, entity_embedding, 0, inverse=True)
         else:
-            logit = Box.box_inclusion_score(box_embedding, entity_embedding, 0)
+            logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
         
         return self.gamma - logit
 
     def forward_box(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict):
-        all_boxes, all_idxs = [], []
-        all_union_boxes, all_union_idxs = [], []
+        all_boxes, all_idxs, all_corner_logits, all_disjoints, all_total_boxes = [], [], [], 0, 0
+        all_union_boxes, all_union_idxs, all_union_corner_logits, all_union_disjoints, all_union_total_boxes = [], [], [], 0, 0
         all_transitive_boxes, all_transitive_idxs = [], []
         all_inverse_boxes, all_inverse_idxs = [], []
         for query_structure in batch_queries_dict:
             query_type = self.query_name_dict[query_structure]
             if 'u' in self.query_name_dict[query_structure]:
                 query_type = self.query_name_dict[self.transform_union_structure(query_structure)]
-                boxes = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
+                boxes, corner_logits, union_disjoints, union_total_boxes = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
+                corner_logits = corner_logits.to(self.entity_embedding.weight.device)
                 all_union_boxes.append(boxes)
                 all_union_idxs.extend(batch_idxs_dict[query_structure])
+                all_union_corner_logits.append(corner_logits)
+                all_union_disjoints += union_disjoints
+                all_union_total_boxes += union_total_boxes
             elif 'to' in self.query_name_dict[query_structure]:
                 boxes = self.embed_query_box(batch_queries_dict[query_structure], query_type)
                 all_transitive_boxes.append(boxes)
@@ -270,19 +283,25 @@ class KGReasoning(nn.Module):
                 all_inverse_boxes.append(boxes)
                 all_inverse_idxs.extend(batch_idxs_dict[query_structure])
             else:
-                boxes = self.embed_query_box(batch_queries_dict[query_structure], 
+                boxes, corner_logits, disjoints, total_boxes = self.embed_query_box(batch_queries_dict[query_structure], 
                                              query_type)
+                corner_logits = corner_logits.to(self.entity_embedding.weight.device)
                 all_boxes.append(boxes)
                 all_idxs.extend(batch_idxs_dict[query_structure])
+                all_corner_logits.append(corner_logits)
+                all_disjoints += disjoints
+                all_total_boxes += total_boxes
 
         if len(all_boxes) > 0:
             all_boxes = Box.cat(all_boxes, dim=0)
             all_boxes.center = all_boxes.center.unsqueeze(1)
             all_boxes.offset = all_boxes.offset.unsqueeze(1)
+            all_corner_logits = torch.cat(all_corner_logits, dim=0)
         if len(all_union_boxes) > 0:
             all_union_boxes = Box.cat(all_union_boxes, dim=0)
             all_union_boxes.center = all_union_boxes.center.unsqueeze(1).view(all_union_boxes.center.shape[0]//2, 2, 1, -1)
             all_union_boxes.offset = all_union_boxes.offset.unsqueeze(1).view(all_union_boxes.offset.shape[0]//2, 2, 1, -1)
+            all_union_corner_logits = torch.cat(all_union_corner_logits, dim=0)
         if len(all_transitive_boxes) > 0:
             all_transitive_boxes = Box.cat(all_transitive_boxes, dim=0)
             all_transitive_boxes.center = all_transitive_boxes.center.unsqueeze(1)
@@ -298,27 +317,31 @@ class KGReasoning(nn.Module):
         if type(positive_sample) != type(None):
             if len(all_boxes) > 0:
                 positive_sample_regular = positive_sample[all_idxs]
-                positive_center_embedding = self.entity_embedding(positive_sample_regular).unsqueeze(1)
-                positive_offset_embedding = self.offset_embedding(positive_sample_regular).unsqueeze(1)
-                positive_box = Box(positive_center_embedding, positive_offset_embedding)
+                positive_center_embedding = self.answer_embedding(positive_sample_regular).unsqueeze(1)
+                # positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_regular).unsqueeze(1))
+                positive_box = Box(positive_center_embedding, as_point=True)
                 positive_logit = self.cal_logit_box(positive_box, all_boxes)
+                corner_logit = self.gamma - all_corner_logits
             else:
                 positive_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
+                corner_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
             if len(all_union_boxes) > 0:
                 positive_sample_union = positive_sample[all_union_idxs]
-                positive_center_embedding = self.entity_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1)
-                positive_offset_embedding = self.offset_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1)
-                positive_box = Box(positive_center_embedding, positive_offset_embedding)
+                positive_center_embedding = self.answer_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1)
+                # positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1))
+                positive_box = Box(positive_center_embedding, as_point=True)
                 positive_union_logit = self.cal_logit_box(positive_box, all_union_boxes)
                 positive_union_logit = torch.max(positive_union_logit, dim=1)[0]
+                corner_union_logit = self.gamma - all_union_corner_logits
             else:
                 positive_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-
+                corner_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
+                
             if len(all_transitive_boxes) > 0:
                 positive_sample_transitive = positive_sample[all_transitive_idxs]
                 positive_center_embedding = self.entity_embedding(positive_sample_transitive).unsqueeze(1)
-                positive_offset_embedding = self.offset_embedding(positive_sample_transitive).unsqueeze(1)
+                positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_transitive).unsqueeze(1))
                 positive_box = Box(positive_center_embedding, positive_offset_embedding)
                 positive_transitive_logit = self.cal_logit_box(positive_box, all_transitive_boxes, transitive=True)
             else:
@@ -327,34 +350,36 @@ class KGReasoning(nn.Module):
             if len(all_inverse_boxes) > 0:
                 positive_sample_inverse = positive_sample[all_inverse_idxs]
                 positive_center_embedding = self.entity_embedding(positive_sample_inverse).unsqueeze(1)
-                positive_offset_embedding = self.offset_embedding(positive_sample_inverse).unsqueeze(1)
+                positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_inverse).unsqueeze(1))
                 positive_box = Box(positive_center_embedding, positive_offset_embedding)
                 positive_inverse_logit = self.cal_logit_box(positive_box, all_inverse_boxes, inverse=True)
             else:
                 positive_inverse_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
                 
             positive_logit = torch.cat([positive_logit, positive_union_logit, positive_transitive_logit, positive_inverse_logit], dim=0)
+            corner_logit = torch.cat([corner_logit, corner_union_logit], dim=0)
         else:
             positive_logit = None
+            corner_logit = None
 
         if type(negative_sample) != type(None):
             if len(all_boxes) > 0:
                 negative_sample_regular = negative_sample[all_idxs]
                 batch_size, negative_size = negative_sample_regular.shape
-                negative_center_embedding = self.entity_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1)
-                negative_offset_embedding = self.offset_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1)
-                negative_box = Box(negative_center_embedding, negative_offset_embedding)
-                negative_logit = self.cal_logit_box(negative_box, all_boxes)
+                negative_center_embedding = self.answer_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1)
+                # negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1))
+                negative_box = Box(negative_center_embedding, as_point=True)
+                negative_logit = self.cal_logit_box(negative_box, all_boxes, negative=True)
             else:
                 negative_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
             if len(all_union_boxes) > 0:
                 negative_sample_union = negative_sample[all_union_idxs]
                 batch_size, negative_size = negative_sample_union.shape
-                negative_center_embedding = self.entity_embedding(negative_sample_union.view(-1)).view(batch_size, 1, negative_size, -1)
-                negative_offset_embedding = self.offset_embedding(negative_sample_union.view(-1)).view(batch_size, 1, negative_size, -1)
-                negative_box = Box(negative_center_embedding, negative_offset_embedding)
-                negative_union_logit = self.cal_logit_box(negative_box, all_union_boxes)
+                negative_center_embedding = self.answer_embedding(negative_sample_union.view(-1)).view(batch_size, 1, negative_size, -1)
+                # negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_union.view(-1)).view(batch_size, 1, negative_size, -1))
+                negative_box = Box(negative_center_embedding, as_point=True)
+                negative_union_logit = self.cal_logit_box(negative_box, all_union_boxes, negative=True)
                 negative_union_logit = torch.max(negative_union_logit, dim=1)[0]
             else:
                 negative_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
@@ -362,20 +387,20 @@ class KGReasoning(nn.Module):
             if len(all_transitive_boxes) > 0:
                 negative_sample_transitive = negative_sample[all_transitive_idxs]
                 batch_size, negative_size = negative_sample_transitive.shape
-                negative_center_embedding = self.entity_embedding(negative_sample_transitive.view(-1)).view(batch_size, negative_size, -1)
-                negative_offset_embedding = self.offset_embedding(negative_sample_transitive.view(-1)).view(batch_size, negative_size, -1)
+                negative_center_embedding = self.answer_embedding(negative_sample_transitive.view(-1)).view(batch_size, negative_size, -1)
+                negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_transitive.view(-1)).view(batch_size, negative_size, -1))
                 negative_box = Box(negative_center_embedding, negative_offset_embedding)
-                negative_transitive_logit = self.cal_logit_box(negative_box, all_transitive_boxes, transitive=True)
+                negative_transitive_logit = self.cal_logit_box(negative_box, all_transitive_boxes, transitive=True, negative=True)
             else:
                 negative_transitive_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
             if len(all_inverse_boxes) > 0:
                 negative_sample_inverse = negative_sample[all_inverse_idxs]
                 batch_size, negative_size = negative_sample_inverse.shape
-                negative_center_embedding = self.entity_embedding(negative_sample_inverse.view(-1)).view(batch_size, negative_size, -1)
-                negative_offset_embedding = self.offset_embedding(negative_sample_inverse.view(-1)).view(batch_size, negative_size, -1)
+                negative_center_embedding = self.answer_embedding(negative_sample_inverse.view(-1)).view(batch_size, negative_size, -1)
+                negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_inverse.view(-1)).view(batch_size, negative_size, -1))
                 negative_box = Box(negative_center_embedding, negative_offset_embedding)
-                negative_inverse_logit = self.cal_logit_box(negative_box, all_inverse_boxes, inverse=True)
+                negative_inverse_logit = self.cal_logit_box(negative_box, all_inverse_boxes, inverse=True, negative=True)
             else:
                 negative_inverse_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
@@ -383,7 +408,8 @@ class KGReasoning(nn.Module):
         else:
             negative_logit = None
 
-        return positive_logit, negative_logit, subsampling_weight, all_idxs+all_union_idxs+all_transitive_idxs+all_inverse_idxs
+        # print(all_disjoints, all_total_boxes, all_union_disjoints, all_union_total_boxes)
+        return positive_logit, negative_logit, subsampling_weight, all_idxs+all_union_idxs+all_transitive_idxs+all_inverse_idxs, corner_logit, all_disjoints+all_union_disjoints, all_total_boxes+all_union_total_boxes
     
     @staticmethod
     def train_step(model, optimizer, train_iterator, args, step):
@@ -406,8 +432,9 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        positive_logit, negative_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict)
+        positive_logit, negative_logit, subsampling_weight, _, corner_logit, all_disjoints, all_total_boxes = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict)
 
+        # print(all_disjoints, all_total_boxes)
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
         positive_score = F.logsigmoid(positive_logit).squeeze(dim=1)
         positive_sample_loss = - (subsampling_weight * positive_score).sum()
@@ -415,14 +442,38 @@ class KGReasoning(nn.Module):
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
 
-        loss = (positive_sample_loss + negative_sample_loss)/2
+        # mask = corner_logit > 0
+        # if torch.sum(mask) == 0:
+            # corner_loss = torch.zeros(1).to(positive_sample.device)
+        # else:
+            # corner_loss = corner_logit[mask].mean()
+            
+        corner_score = -F.logsigmoid(corner_logit) * subsampling_weight
+        corner_loss = corner_score.sum() / subsampling_weight.sum()
+
+        # print(corner_loss.item(), positive_sample_loss.item(), negative_sample_loss.item())
+        loss = (positive_sample_loss + negative_sample_loss)/2  + corner_loss
         loss.backward()
         optimizer.step()
+        
+        
         log = {
             'positive_sample_loss': positive_sample_loss.item(),
             'negative_sample_loss': negative_sample_loss.item(),
             'loss': loss.item(),
+            'corner_loss': corner_loss.item(),
+            'disjoint': all_disjoints,
+            'total_boxes': all_total_boxes
         }
+        
+        # if corner_loss.item() > 0:
+            # log['corner_loss'] = corner_loss.item()
+        # if all_disjoints > 0:
+            # log['disjoint'] = all_disjoints
+            # log['total_boxes'] = all_total_boxes
+        # else:
+            # log['disjoint'] = 1
+            # log['total_boxes'] = 1
         return log
 
     @staticmethod
@@ -448,7 +499,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict)
+                _, negative_logit, _, idxs, _, _, _ = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)
