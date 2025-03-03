@@ -78,7 +78,7 @@ class Box():
     def translate(self, translation, factor, scaling, scaling_bias):
         new_center = self.center * factor + translation
         new_offset = th.abs(self.offset * th.abs(scaling) + scaling_bias) # NOTE important to provide a positive offset here.
- 
+        # new_offset = self.offset * th.abs(scaling) + th.abs(scaling_bias) # NOTE important to provide a positive offset here.
         return Box(new_center, new_offset)
 
     def translate2(self, translation, factor, scaling, scaling_bias, transitive_ids=None, inverse_ids=None, r_ids=None):
