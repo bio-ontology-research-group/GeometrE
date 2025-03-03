@@ -161,6 +161,7 @@ def load_data(data_path, saturated_data):
 # @ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/FB15k-237-betae', help='Path to data directory')
 @ck.command()
 @ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/WN18RR-QA', help='Path to data directory')
+# @ck.option('--data-path', '-d', default='../../use_cases/query_answering_data/NELL-betae', help='Path to data directory')
 @ck.option('--embed_dim', '-dim', default=400, help='Embedding dimension')
 @ck.option('--batch_size', '-bs', default=512, help='Batch size')
 @ck.option('--learning_rate', '-lr', default=0.001, help='Learning rate')
@@ -194,9 +195,9 @@ def main(data_path, embed_dim, batch_size, learning_rate, loss_margin, module_ma
         learning_rate = wandb.config.learning_rate
         batch_size = wandb.config.batch_size
         num_negs = wandb.config.num_negs
-        # transitive = wandb.config.transitive
+        transitive = wandb.config.transitive
         # saturated = wandb.config.saturated
-        transitive = "no"
+        # transitive = "no"
         saturated = "no"
         
     train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, ent2id, id2ent, rel2id, id2rel = load_data(data_path, saturated)
