@@ -262,7 +262,7 @@ def main(args):
     print ("overwritting args.save_path")
     args.save_path = os.path.join(prefix, args.data_path.split('/')[-1], args.tasks, args.geo)
     if args.geo in ['pure_box']:
-        tmp_str = "hid-{}-g-{}-lr-{}-bs-{}-ns-{}-trans-{}".format(args.hidden_dim, args.gamma, args.learning_rate, args.batch_size, args.negative_sample_size, args.transitive)
+        tmp_str = "hid-{}-g-{}-a-{}-lr-{}-bs-{}-ns-{}-trans-{}".format(args.hidden_dim, args.gamma, args.alpha, args.learning_rate, args.batch_size, args.negative_sample_size, args.transitive)
     elif args.geo in ['vec']:
         tmp_str = "g-{}".format(args.gamma)
     elif args.geo == 'beta':
