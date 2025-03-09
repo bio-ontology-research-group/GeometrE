@@ -438,13 +438,15 @@ def main(args):
             log = model.train_step(model, optimizer, train_path_iterator, args, step)
             for metric in log:
                 writer.add_scalar('path_'+metric, log[metric], step)
+            training_logs.append(log)
             if train_other_iterator is not None:
                 log = model.train_step(model, optimizer, train_other_iterator, args, step)
                 for metric in log:
                     writer.add_scalar('other_'+metric, log[metric], step)
-                # log = model.train_step(model, optimizer, train_path_iterator, args, step)
+                training_logs.append(log)
+                log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
-            training_logs.append(log)
+            
 
             if step >= warm_up_steps:
                 current_learning_rate = current_learning_rate / 5
