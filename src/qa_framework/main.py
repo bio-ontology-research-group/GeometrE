@@ -185,14 +185,14 @@ def load_data(args, tasks):
     Load queries and remove queries not in tasks
     '''
     logging.info("loading data")
-    if args.transitive == 'yes':
-        train_queries = pickle.load(open(os.path.join(args.data_path, "new-train-queries.pkl"), 'rb'))
-        valid_queries = pickle.load(open(os.path.join(args.data_path, "new-valid-queries.pkl"), 'rb'))
-        test_queries = pickle.load(open(os.path.join(args.data_path, "new-test-queries.pkl"), 'rb'))
-    else:
-        train_queries = pickle.load(open(os.path.join(args.data_path, "train-queries.pkl"), 'rb'))
-        valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
-        test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
+    # if args.transitive == 'yes':
+        # train_queries = pickle.load(open(os.path.join(args.data_path, "new-train-queries.pkl"), 'rb'))
+        # valid_queries = pickle.load(open(os.path.join(args.data_path, "new-valid-queries.pkl"), 'rb'))
+        # test_queries = pickle.load(open(os.path.join(args.data_path, "new-test-queries.pkl"), 'rb'))
+    # else:
+    train_queries = pickle.load(open(os.path.join(args.data_path, "train-queries.pkl"), 'rb'))
+    valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
+    test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
 
     train_answers = pickle.load(open(os.path.join(args.data_path, "train-answers.pkl"), 'rb'))
     valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
@@ -200,7 +200,7 @@ def load_data(args, tasks):
     test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
     test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
 
-    
+    rel2id = pickle.load(open(os.path.join(args.data_path, "rel2id.pkl"), 'rb'))
     
     # remove tasks not in args.tasks
     for name in all_tasks:
@@ -217,12 +217,23 @@ def load_data(args, tasks):
             if query_structure in test_queries:
                 del test_queries[query_structure]
 
-    return train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers
+    dataset_name = args.data_path.split('/')[-1]
+    transitive_roles = transitive_roles_dict[dataset_name]
+    inverse_roles = inverse_roles_dict[dataset_name]
+    transitive_ids = torch.tensor([rel2id[role] for role in transitive_roles], dtype=torch.long)
+    inverse_ids = torch.tensor([rel2id[role] for role in inverse_roles], dtype=torch.long)
+                
+    return train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids
 
 def main(args):
     args.cuda = True
     wandb_logger = wandb.init(entity="ferzcam", project="box_qa", name=args.description)
-                     
+
+    if args.transitive == 'yes':
+        args.transitive = True
+    elif args.transitive == 'no':
+        args.transitive = False
+    
     if args.no_sweep:
         wandb_logger.log({"hidden_dim": args.hidden_dim,
                           "gamma": args.gamma,
@@ -241,9 +252,6 @@ def main(args):
         args.negative_sample_size = wandb.config.negative_sample_size
         args.transitive = wandb.config.transitive
 
-    if args.transitive == 'yes':
-        args.tasks += '.1pto.1pti.2pto.2pti.3pto.3pti.ipto.ipti.inpto.inpti'
-        
     
     set_global_seed(args.seed)
     tasks = args.tasks.split('.')
@@ -299,7 +307,7 @@ def main(args):
     logging.info('#max steps: %d' % args.max_steps)
     logging.info('Evaluate unoins using: %s' % args.evaluate_union)
 
-    train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers = load_data(args, tasks)        
+    train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids = load_data(args, tasks)        
 
     logging.info("Training info:")
     if args.do_train:
@@ -378,6 +386,8 @@ def main(args):
         beta_mode = eval_tuple(args.beta_mode),
         test_batch_size=args.test_batch_size,
         query_name_dict = query_name_dict,
+        transitive_ids = transitive_ids,
+        inverse_ids = inverse_ids
     )
 
     logging.info('Model Parameter Configuration:')

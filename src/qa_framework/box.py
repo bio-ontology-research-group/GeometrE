@@ -34,13 +34,37 @@ class Box():
     def slice(self, index_tensor):
         return Box(self.center[index_tensor], self.offset[index_tensor])
 
+    def mask(self, mask):
+        assert mask.dtype == th.bool, f"mask: {mask.dtype}"
+        return Box(self.center[mask], self.offset[mask], check_shape=False)
+    
     def translate(self, translation_mul, translation_add, scaling_mul, scaling_add):
         new_center = self.center * translation_mul + translation_add
         new_offset = th.abs(self.offset * scaling_mul + scaling_add)
         return Box(new_center, new_offset)
- 
+
+    @staticmethod
+    def box_composed_score(box_1, box_2, alpha, trans_inv, trans_not_inv, negative=False):
+        shape_1 = box_1.center.shape[:-1]
+        shape_2 = box_2.center.shape[:-1]
+        shape = tuple([max(s1, s2) for s1, s2 in zip(shape_1, shape_2)])
+        
+        not_trans_or_inv = ~(trans_inv | trans_not_inv)
+        loss = -1 * th.ones(shape, device=box_1.center.device)
+
+        normal_loss = Box.box_inclusion_score(box_1.mask(not_trans_or_inv), box_2.mask(not_trans_or_inv), alpha, negative)
+        trans_loss = Box.box_order_score(box_1.mask(trans_not_inv), box_2.mask(trans_not_inv), negative)
+        inv_loss = Box.box_order_score(box_1.mask(trans_inv), box_2.mask(trans_inv), negative, inverse=True)
+        loss[not_trans_or_inv] = normal_loss
+        loss[trans_not_inv] = trans_loss
+        loss[trans_inv] = inv_loss
+
+        assert th.all(loss != -1), f"loss: {loss}"
+        return loss
+    
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False):
+        
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
@@ -53,33 +77,20 @@ class Box():
         return loss
 
     @staticmethod
-    def box_order_score(box_1, box_2, margin, inverse=False, permute_back=False):
+    def box_order_score(box_1, box_2, negative, inverse=False):
         
-        if len(box_2.center.shape) == 3 and len(box_1.center.shape) == 2:
-            box_1.center = box_1.center.unsqueeze(1)
-            box_1.offset = box_1.offset.unsqueeze(1)
-            
-        box_1_bs, *_ = box_1.center.shape
-        box_2_bs, *_ = box_2.center.shape
-
-        if box_1_bs != box_2_bs:
-            box_2.center = box_2.center.permute(1, 0, 2)
-            box_2.offset = box_2.offset.permute(1, 0, 2)
-                        
         if inverse:
-            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.lower + margin), dim=-1, ord=1)
+            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         else:
-            order_loss = th.linalg.norm(th.relu(box_2.upper - box_1.upper + margin), dim=-1, ord=1)
+            order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
             
-                
-        if permute_back:
-            box_2.center = box_2.center.permute(1, 0, 2)
-            box_2.offset = box_2.offset.permute(1, 0, 2)
-
-        box_1_corner_loss = Box.corner_loss(box_1)
-        box_2_corner_loss = Box.corner_loss(box_2)
-
-        return order_loss + (box_1_corner_loss + box_2_corner_loss) / 2
+        if not negative:
+            box_1_corner_loss = Box.corner_loss(box_1)
+            loss = order_loss + box_1_corner_loss
+        else:
+            loss = order_loss
+            
+        return loss
 
     @staticmethod
     def corner_loss(box):
