@@ -37,7 +37,42 @@ class Box():
     def mask(self, mask):
         assert mask.dtype == th.bool, f"mask: {mask.dtype}"
         return Box(self.center[mask], self.offset[mask], check_shape=False)
-    
+
+    def assign_with_mask(self, mask, box):
+        self.center[mask] = box.center
+        self.offset[mask] = box.offset
+
+    def project(self, projection_dims):
+        box_shape = self.center.shape
+        bs = box_shape[0]
+        dim = box_shape[-1]
+
+        reshaped_self_center = self.center.view(bs, -1, dim)
+        reshaped_self_offset = self.offset.view(bs, -1, dim)
+        reshaped_box = Box(reshaped_self_center, reshaped_self_offset)
+
+        intermediate_dim = reshaped_self_center.shape[1]
+        
+        assert len(projection_dims) == bs, f"projection_dims: {len(projection_dims)} != bs: {bs}"
+        projection_dims = projection_dims.unsqueeze(1).expand(bs, intermediate_dim)
+        bs_ids = th.arange(bs, device=self.center.device).unsqueeze(1).expand(bs, intermediate_dim)
+        ns_ids = th.arange(intermediate_dim, device=self.center.device).expand(bs, intermediate_dim)
+
+        non_projected_center = reshaped_box.center[bs_ids, ns_ids, projection_dims].reshape(*box_shape[:-1]).unsqueeze(-1)
+        non_projected_offset = reshaped_box.offset[bs_ids, ns_ids, projection_dims].reshape(*box_shape[:-1]).unsqueeze(-1)
+        non_projected_box = Box(non_projected_center, non_projected_offset)
+            
+        self.center[bs_ids, ns_ids, projection_dims] = 0
+        self.offset[bs_ids, ns_ids, projection_dims] = 0
+        self.center = self.center.view(*box_shape)
+        self.offset = self.offset.view(*box_shape)
+        projected_box = Box(self.center, self.offset)
+        
+        return projected_box, non_projected_box
+        
+
+        
+        
     def translate(self, translation_mul, translation_add, scaling_mul, scaling_add):
         new_center = self.center * translation_mul + translation_add
         new_offset = th.abs(self.offset * scaling_mul + scaling_add)
@@ -61,7 +96,62 @@ class Box():
 
         assert th.all(loss != -1), f"loss: {loss}"
         return loss
-    
+
+    @staticmethod
+    def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False):
+        bs, *_ = box_1.center.shape
+        hid_dim = box_1.center.shape[-1]
+        
+        shape_1 = box_1.center.shape[:-1]
+        shape_2 = box_2.center.shape[:-1]
+        shape = tuple([max(s1, s2) for s1, s2 in zip(shape_1, shape_2)])
+                
+        not_trans_or_inv = ~(trans_inv | trans_not_inv)
+        # print("--------------------------------")
+        # print(trans_inv)
+        # print(trans_not_inv)
+        # print(~not_trans_or_inv)
+        # print(projection_dims)
+        assert (~not_trans_or_inv).sum() == len(projection_dims), f"trans bs: {(~not_trans_or_inv).sum()} != len(projection_dims): {len(projection_dims)}"
+        
+        order_loss = th.zeros(shape, device=box_1.center.device)
+
+        if len(projection_dims) > 0:
+            # print(f"Projecting. Box 1: {box_1.center.shape}. Not trans or inv: {not_trans_or_inv.shape}. Projection dims: {projection_dims.shape}")
+            projected_boxes_1, single_dim_boxes_1 = box_1.mask(~not_trans_or_inv).project(projection_dims)
+            # print(f"Projected. Box 1: {projected_boxes_1.center.shape}. Single dim boxes: {single_dim_boxes_1.center.shape}")
+            # print(f"Projecting. Box 2: {box_2.center.shape}. Not trans or inv: {not_trans_or_inv.shape}. Projection dims: {projection_dims.shape}")
+            projected_boxes_2, single_dim_boxes_2 = box_2.mask(~not_trans_or_inv).project(projection_dims)
+            box_1.assign_with_mask(~not_trans_or_inv, projected_boxes_1)
+            box_2.assign_with_mask(~not_trans_or_inv, projected_boxes_2)
+
+            single_centers_1, single_offsets_1 = th.zeros_like(box_1.center), th.zeros_like(box_1.offset)
+            single_centers_2, single_offsets_2 = th.zeros_like(box_2.center), th.zeros_like(box_2.offset)
+
+            single_centers_1[~not_trans_or_inv] = single_dim_boxes_1.center
+            single_offsets_1[~not_trans_or_inv] = single_dim_boxes_1.offset
+            single_centers_2[~not_trans_or_inv] = single_dim_boxes_2.center
+            single_offsets_2[~not_trans_or_inv] = single_dim_boxes_2.offset
+            
+            single_dim_boxes_1 = Box(single_centers_1, single_offsets_1)
+            single_dim_boxes_2 = Box(single_centers_2, single_offsets_2)
+        
+        
+        inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative)
+
+        if len(projection_dims) > 0:
+            trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), negative)
+            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), negative, inverse=True)
+
+            order_loss[not_trans_or_inv] = 0
+            order_loss[trans_not_inv] = trans_loss
+            order_loss[trans_inv] = inv_loss
+        # assert th.all(order_loss != -1), f"order_loss: {order_loss}"
+
+        weight = 1/hid_dim
+        
+        return weight*order_loss + inclusion_loss
+
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False):
         
@@ -84,13 +174,13 @@ class Box():
         else:
             order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
             
-        if not negative:
-            box_1_corner_loss = Box.corner_loss(box_1)
-            loss = order_loss + box_1_corner_loss
-        else:
-            loss = order_loss
+        # if not negative:
+            # box_1_corner_loss = Box.corner_loss(box_1)
+            # loss = order_loss + box_1_corner_loss
+        # else:
+            # loss = order_loss
             
-        return loss
+        return order_loss
 
     @staticmethod
     def corner_loss(box):
