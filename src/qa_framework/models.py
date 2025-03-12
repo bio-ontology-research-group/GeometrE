@@ -206,6 +206,9 @@ class KGReasoning(nn.Module):
         elif self.query_name_dict[query_structure] == 'up-DNF':
             return ('e', ('r', 'r'))
 
+    def cal_membership_logit(self, entity_embedding, box_embedding):
+        return Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha)
+        
     def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
         if transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
@@ -337,7 +340,12 @@ class KGReasoning(nn.Module):
             negative_logit = None
 
         # print(all_disjoints, all_total_boxes, all_union_disjoints, all_union_total_boxes)
-        return positive_logit, negative_logit, subsampling_weight, all_idxs+all_union_idxs, corner_logit, all_disjoints+all_union_disjoints, all_total_boxes+all_union_total_boxes
+
+        all_query_boxes = Box(self.entity_embedding.weight, self.offset_embedding.weight)
+        all_answer_boxes = Box(self.answer_embedding.weight, as_point=True)
+        membership_logit = self.cal_membership_logit(all_answer_boxes, all_query_boxes)
+        
+        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs, corner_logit, all_disjoints+all_union_disjoints, all_total_boxes+all_union_total_boxes
     
     @staticmethod
     def train_step(model, optimizer, train_iterator, args, step):
@@ -360,7 +368,7 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        positive_logit, negative_logit, subsampling_weight, _, corner_logit, all_disjoints, all_total_boxes = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+        positive_logit, negative_logit, membership_logit, subsampling_weight, _, corner_logit, all_disjoints, all_total_boxes = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
 
         # print(all_disjoints, all_total_boxes)
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
@@ -370,6 +378,9 @@ class KGReasoning(nn.Module):
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
 
+        membership_loss = -F.logsigmoid(membership_logit).mean()
+        
+        
         # mask = corner_logit > 0
         # if torch.sum(mask) == 0:
             # corner_loss = torch.zeros(1).to(positive_sample.device)
@@ -380,7 +391,7 @@ class KGReasoning(nn.Module):
         corner_loss = corner_score.sum() / subsampling_weight.sum()
 
         # print(corner_loss.item(), positive_sample_loss.item(), negative_sample_loss.item())
-        loss = (positive_sample_loss + negative_sample_loss)/2  + corner_loss
+        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss # + corner_loss
         loss.backward()
         optimizer.step()
         
@@ -388,6 +399,7 @@ class KGReasoning(nn.Module):
         log = {
             'positive_sample_loss': positive_sample_loss.item(),
             'negative_sample_loss': negative_sample_loss.item(),
+            'membership_loss': membership_loss.item(),
             'loss': loss.item(),
             'corner_loss': corner_loss.item(),
             'disjoint': all_disjoints,
@@ -427,7 +439,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit, _, idxs, _, _, _ = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+                _, negative_logit, _, _, idxs, _, _, _ = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)

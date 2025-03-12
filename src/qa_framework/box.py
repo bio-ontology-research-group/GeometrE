@@ -161,10 +161,10 @@ class Box():
         loss = dist_outside + alpha*dist_inside
                  
         if not negative:
-            box_1_corner_loss = Box.corner_loss(box_1)
-            loss += box_1_corner_loss
-        
-        return loss
+            corner_loss = Box.corner_loss(box_1)
+        else:
+            corner_loss = th.zeros_like(loss)
+        return loss + corner_loss
 
     @staticmethod
     def box_order_score(box_1, box_2, negative, inverse=False):
