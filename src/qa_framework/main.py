@@ -76,12 +76,12 @@ def parse_args(args=None):
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
     parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
-    parser.add_argument('--max_steps', default=100000, type=int, help="maximum iterations to train")
+    parser.add_argument('--max_steps', default=200001, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
     
-    parser.add_argument('--save_checkpoint_steps', default=5000, type=int, help="save checkpoints every xx steps")
-    parser.add_argument('--valid_steps', default=5000, type=int, help="evaluate validation queries every xx steps")
-    parser.add_argument('--log_steps', default=100, type=int, help='train log every xx steps')
+    parser.add_argument('--save_checkpoint_steps', default=10000, type=int, help="save checkpoints every xx steps")
+    parser.add_argument('--valid_steps', default=10000, type=int, help="evaluate validation queries every xx steps")
+    parser.add_argument('--log_steps', default=1000, type=int, help='train log every xx steps')
     parser.add_argument('--test_log_steps', default=1000, type=int, help='valid/test log every xx steps')
     
     parser.add_argument('--nentity', type=int, default=0, help='DO NOT MANUALLY SET')
