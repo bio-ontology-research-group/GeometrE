@@ -51,7 +51,8 @@ def get_role_data(translation_mul, translation_add, scaling_mul, scaling_add, tr
     # scaling_add[transitive_mask] = id_add
     
     if inter_translation is not None:
-        inter_add = inter_translation(index_tensor)
+        inter_add = id_add
+        # inter_add = inter_translation(index_tensor)
     else:
         inter_add = None
     return factor, add, scale, scaling_add, inter_add, trans_inv, trans_not_inv, projection_dims

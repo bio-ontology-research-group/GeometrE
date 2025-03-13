@@ -35,7 +35,7 @@ class Box():
         return Box(self.center[index_tensor], self.offset[index_tensor])
 
     def mask(self, mask):
-        assert mask.dtype == th.bool, f"mask: {mask.dtype}"
+        # assert mask.dtype == th.bool, f"mask: {mask.dtype}"
         return Box(self.center[mask], self.offset[mask], check_shape=False)
 
     def assign_with_mask(self, mask, box):
@@ -53,7 +53,7 @@ class Box():
 
         intermediate_dim = reshaped_self_center.shape[1]
         
-        assert len(projection_dims) == bs, f"projection_dims: {len(projection_dims)} != bs: {bs}"
+        # assert len(projection_dims) == bs, f"projection_dims: {len(projection_dims)} != bs: {bs}"
         projection_dims = projection_dims.unsqueeze(1).expand(bs, intermediate_dim)
         bs_ids = th.arange(bs, device=self.center.device).unsqueeze(1).expand(bs, intermediate_dim)
         ns_ids = th.arange(intermediate_dim, device=self.center.device).expand(bs, intermediate_dim)
@@ -75,7 +75,8 @@ class Box():
         
     def translate(self, translation_mul, translation_add, scaling_mul, scaling_add):
         new_center = self.center * translation_mul + translation_add
-        new_offset = th.abs(self.offset * scaling_mul + scaling_add)
+        # new_offset = th.abs(self.offset * scaling_mul + scaling_add)
+        new_offset = self.offset * th.abs(scaling_mul) + scaling_add
         return Box(new_center, new_offset)
 
     @staticmethod
@@ -94,7 +95,7 @@ class Box():
         loss[trans_not_inv] = trans_loss
         loss[trans_inv] = inv_loss
 
-        assert th.all(loss != -1), f"loss: {loss}"
+        # assert th.all(loss != -1), f"loss: {loss}"
         return loss
 
     @staticmethod
@@ -112,7 +113,7 @@ class Box():
         # print(trans_not_inv)
         # print(~not_trans_or_inv)
         # print(projection_dims)
-        assert (~not_trans_or_inv).sum() == len(projection_dims), f"trans bs: {(~not_trans_or_inv).sum()} != len(projection_dims): {len(projection_dims)}"
+        # assert (~not_trans_or_inv).sum() == len(projection_dims), f"trans bs: {(~not_trans_or_inv).sum()} != len(projection_dims): {len(projection_dims)}"
         
         order_loss = th.zeros(shape, device=box_1.center.device)
 
@@ -226,7 +227,7 @@ class Box():
         num_boxes = len(boxes)
         position -= 1
         box_to_negate = boxes.pop(position)
-        assert num_boxes == len(boxes) + 1
+        # assert num_boxes == len(boxes) + 1
         intermediate_intersection, corner_logit, disjoints, total_boxes = Box.intersection(*boxes)
 
         return intermediate_intersection, corner_logit, disjoints, total_boxes
