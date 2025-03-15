@@ -209,8 +209,12 @@ class KGReasoning(nn.Module):
     def cal_membership_logit(self, entity_embedding, box_embedding):
         return Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha)
         
-    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
-        if transitive:
+    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False, inter_neg=False):
+        if inter_neg:
+            # logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
+            logit = Box.box_inclusion_with_negation_score(box_embedding, entity_embedding, self.alpha, negative=negative)
+            
+        elif transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
             logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative)
         else:
@@ -219,32 +223,30 @@ class KGReasoning(nn.Module):
         return self.gamma - logit
 
     def forward_box(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
-        all_boxes, all_idxs, all_corner_logits, all_disjoints, all_total_boxes, all_trans_masks, all_inv_masks, all_projection_dims = [], [], [], 0, 0, [], [], []
-        all_union_boxes, all_union_idxs, all_union_corner_logits, all_union_disjoints, all_union_total_boxes, all_union_trans_masks, all_union_inv_masks, all_union_projection_dims = [], [], [], 0, 0, [], [], []
+        all_boxes, all_idxs, all_trans_masks, all_inv_masks, all_projection_dims = [], [], [], [], []
+        all_union_boxes, all_union_idxs, all_union_trans_masks, all_union_inv_masks, all_union_projection_dims = [], [], [], [], []
+        all_inter_neg_boxes, all_inter_neg_idxs, all_inter_neg_trans_masks, all_inter_neg_inv_masks, all_inter_neg_projection_dims = [], [], [], [], []
         for query_structure in batch_queries_dict:
             query_type = self.query_name_dict[query_structure]
             if 'u' in self.query_name_dict[query_structure]:
                 query_type = self.query_name_dict[self.transform_union_structure(query_structure)]
-                (boxes, corner_logits, union_disjoints, union_total_boxes), (inv_mask, trans_mask, projection_dims) = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
-                # print(f"Union. Boxes: {boxes.center.shape}. inv_mask: {inv_mask.shape}. trans_mask: {trans_mask.shape}. projection_dims: {projection_dims.shape}")
-                corner_logits = corner_logits.to(self.entity_embedding.weight.device)
+                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
                 all_union_boxes.append(boxes)
                 all_union_idxs.extend(batch_idxs_dict[query_structure])
-                all_union_corner_logits.append(corner_logits)
-                all_union_disjoints += union_disjoints
-                all_union_total_boxes += union_total_boxes
                 all_union_trans_masks.append(trans_mask)
                 all_union_inv_masks.append(inv_mask)
                 all_union_projection_dims.append(projection_dims)
+            elif self.query_name_dict[query_structure] in ["2in", "3in", "pni", "pin"]:
+                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type)
+                all_inter_neg_boxes.append(boxes)
+                all_inter_neg_idxs.extend(batch_idxs_dict[query_structure])
+                all_inter_neg_trans_masks.append(trans_mask)
+                all_inter_neg_inv_masks.append(inv_mask)
+                all_inter_neg_projection_dims.append(projection_dims)
             else:
-                (boxes, corner_logits, disjoints, total_boxes), (inv_mask, trans_mask, projection_dims) = self.embed_query_box(batch_queries_dict[query_structure], 
-                                             query_type)
-                corner_logits = corner_logits.to(self.entity_embedding.weight.device)
+                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type)
                 all_boxes.append(boxes)
                 all_idxs.extend(batch_idxs_dict[query_structure])
-                all_corner_logits.append(corner_logits)
-                all_disjoints += disjoints
-                all_total_boxes += total_boxes
                 all_trans_masks.append(trans_mask)
                 all_inv_masks.append(inv_mask)
                 all_projection_dims.append(projection_dims)
@@ -253,69 +255,65 @@ class KGReasoning(nn.Module):
             all_boxes = Box.cat(all_boxes, dim=0)
             all_boxes.center = all_boxes.center.unsqueeze(1)
             all_boxes.offset = all_boxes.offset.unsqueeze(1)
-            all_corner_logits = torch.cat(all_corner_logits, dim=0)
             all_trans_masks = torch.cat(all_trans_masks, dim=0)
             all_inv_masks = torch.cat(all_inv_masks, dim=0)
             all_projection_dims = torch.cat(all_projection_dims, dim=0).long()
         if len(all_union_boxes) > 0:
             all_union_boxes = Box.cat(all_union_boxes, dim=0)
-            # all_union_boxes.center = all_union_boxes.center.unsqueeze(1).view(all_union_boxes.center.shape[0]//2, 2, 1, -1)
-            # all_union_boxes.offset = all_union_boxes.offset.unsqueeze(1).view(all_union_boxes.offset.shape[0]//2, 2, 1, -1)
-            all_union_boxes.center = all_union_boxes.center.unsqueeze(1)#.view(all_union_boxes.center.shape[0]//2, 2, 1, -1)
-            all_union_boxes.offset = all_union_boxes.offset.unsqueeze(1)#.view(all_union_boxes.offset.shape[0]//2, 2, 1, -1)
-
-            all_union_corner_logits = torch.cat(all_union_corner_logits, dim=0)
+            all_union_boxes.center = all_union_boxes.center.unsqueeze(1)
+            all_union_boxes.offset = all_union_boxes.offset.unsqueeze(1)
             all_union_trans_masks = torch.cat(all_union_trans_masks, dim=0)
-            # print(f"union trans masks: {all_union_trans_masks}")
-            # print(f"union inv masks: {all_union_inv_masks}")
-            all_union_trans_masks = all_union_trans_masks#.unsqueeze(1).view(all_union_trans_masks.shape[0]//2, 2)
             all_union_inv_masks = torch.cat(all_union_inv_masks, dim=0)
-            all_union_inv_masks = all_union_inv_masks#.unsqueeze(1).view(all_union_inv_masks.shape[0]//2, 2)
             all_union_projection_dims = torch.cat(all_union_projection_dims, dim=0).long()
-            # print(f"union trans masks: {all_union_trans_masks}")
-            # print(f"union inv masks: {all_union_inv_masks}")
-            # print(f"union projection dims: {all_union_projection_dims}")
+        if len(all_inter_neg_boxes) > 0:
+            all_inter_neg_boxes = Box.cat(all_inter_neg_boxes, dim=0)
+            all_inter_neg_boxes.center = all_inter_neg_boxes.center.unsqueeze(1)
+            all_inter_neg_boxes.offset = all_inter_neg_boxes.offset.unsqueeze(1)
+            all_inter_neg_boxes.negated_component.center = all_inter_neg_boxes.negated_component.center.unsqueeze(1)
+            all_inter_neg_boxes.negated_component.offset = all_inter_neg_boxes.negated_component.offset.unsqueeze(1)
+            
+            all_inter_neg_trans_masks = torch.cat(all_inter_neg_trans_masks, dim=0)
+            all_inter_neg_inv_masks = torch.cat(all_inter_neg_inv_masks, dim=0)
+            all_inter_neg_projection_dims = torch.cat(all_inter_neg_projection_dims, dim=0).long()
+
         if type(subsampling_weight) != type(None):
-            subsampling_weight = subsampling_weight[all_idxs+all_union_idxs]
+            subsampling_weight = subsampling_weight[all_idxs+all_union_idxs+all_inter_neg_idxs]
 
         if type(positive_sample) != type(None):
             if len(all_boxes) > 0:
                 positive_sample_regular = positive_sample[all_idxs]
                 positive_center_embedding = self.answer_embedding(positive_sample_regular).unsqueeze(1)
-                # positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_regular).unsqueeze(1))
                 positive_box = Box(positive_center_embedding, as_point=True)
                 positive_logit = self.cal_logit_box(positive_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, transitive=transitive)
-                corner_logit = self.gamma - all_corner_logits
             else:
                 positive_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-                corner_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-
+                
             if len(all_union_boxes) > 0:
                 positive_sample_union = positive_sample[all_union_idxs]
                 positive_center_embedding = self.answer_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1)
-                # positive_offset_embedding = torch.abs(self.offset_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1))
                 positive_box = Box(positive_center_embedding, as_point=True)
                 positive_union_logit = self.cal_logit_box(positive_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, transitive=transitive)
                 positive_union_logit = positive_union_logit.unsqueeze(1).view(positive_union_logit.shape[0]//2, 2)
                 positive_union_logit = torch.max(positive_union_logit, dim=1)[0]
-                corner_union_logit = self.gamma - all_union_corner_logits
             else:
                 positive_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-                corner_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-                
-                
-            positive_logit = torch.cat([positive_logit, positive_union_logit], dim=0)
-            corner_logit = torch.cat([corner_logit, corner_union_logit], dim=0)
+            if len(all_inter_neg_boxes) > 0:
+                positive_sample_inter_neg = positive_sample[all_inter_neg_idxs]
+                positive_center_embedding = self.answer_embedding(positive_sample_inter_neg).unsqueeze(1)
+                positive_box = Box(positive_center_embedding, as_point=True)
+                positive_inter_neg_logit = self.cal_logit_box(positive_box, all_inter_neg_boxes, all_inter_neg_inv_masks, all_inter_neg_trans_masks, all_inter_neg_projection_dims, transitive=transitive, inter_neg=True)
+            else:
+                positive_inter_neg_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
+
+            positive_logit = torch.cat([positive_logit, positive_union_logit, positive_inter_neg_logit], dim=0)
         else:
             positive_logit = None
-            corner_logit = None
-
+            
         if type(negative_sample) != type(None):
             if len(all_boxes) > 0:
                 negative_sample_regular = negative_sample[all_idxs]
                 batch_size, negative_size = negative_sample_regular.shape
                 negative_center_embedding = self.answer_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1)
-                # negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1))
                 negative_box = Box(negative_center_embedding, as_point=True)
                 negative_logit = self.cal_logit_box(negative_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, negative=True, transitive=transitive)
             else:
@@ -323,29 +321,34 @@ class KGReasoning(nn.Module):
 
             if len(all_union_boxes) > 0:
                 negative_sample_union = negative_sample[all_union_idxs]
-                # print(f"Negative sample union: {negative_sample_union.shape}")
                 batch_size, negative_size = negative_sample_union.shape
                 negative_center_embedding = self.answer_embedding(negative_sample_union.view(-1)).view(batch_size, negative_size, -1).repeat(2, 1, 1)
-                # negative_offset_embedding = torch.abs(self.offset_embedding(negative_sample_union.view(-1)).view(batch_size, 1, negative_size, -1))
                 negative_box = Box(negative_center_embedding, as_point=True)
                 negative_union_logit = self.cal_logit_box(negative_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, negative=True, transitive=transitive)
-                # print(f"Negative union logit: {negative_union_logit.shape}")
                 negative_union_logit = negative_union_logit.unsqueeze(1).view(negative_union_logit.shape[0]//2, 2, -1)
                 negative_union_logit = torch.max(negative_union_logit, dim=1)[0]
             else:
                 negative_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
-            negative_logit = torch.cat([negative_logit, negative_union_logit], dim=0)
+            if len(all_inter_neg_boxes) > 0:
+                negative_sample_inter_neg = negative_sample[all_inter_neg_idxs]
+                batch_size, negative_size = negative_sample_inter_neg.shape
+                negative_center_embedding = self.answer_embedding(negative_sample_inter_neg.view(-1)).view(batch_size, negative_size, -1)
+                negative_box = Box(negative_center_embedding, as_point=True)
+                negative_inter_neg_logit = self.cal_logit_box(negative_box, all_inter_neg_boxes, all_inter_neg_inv_masks, all_inter_neg_trans_masks, all_inter_neg_projection_dims, negative=True, transitive=transitive, inter_neg=True)
+            else:
+                negative_inter_neg_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
+
+                
+            negative_logit = torch.cat([negative_logit, negative_union_logit, negative_inter_neg_logit], dim=0)
         else:
             negative_logit = None
-
-        # print(all_disjoints, all_total_boxes, all_union_disjoints, all_union_total_boxes)
 
         all_query_boxes = Box(self.entity_embedding.weight, self.offset_embedding.weight)
         all_answer_boxes = Box(self.answer_embedding.weight, as_point=True)
         membership_logit = self.cal_membership_logit(all_answer_boxes, all_query_boxes)
         
-        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs, corner_logit, all_disjoints+all_union_disjoints, all_total_boxes+all_union_total_boxes
+        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs+all_inter_neg_idxs
     
     @staticmethod
     def train_step(model, optimizer, train_iterator, args, step):
@@ -368,9 +371,8 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        positive_logit, negative_logit, membership_logit, subsampling_weight, _, corner_logit, all_disjoints, all_total_boxes = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+        positive_logit, negative_logit, membership_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
 
-        # print(all_disjoints, all_total_boxes)
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
         positive_score = F.logsigmoid(positive_logit).squeeze(dim=1)
         positive_sample_loss = - (subsampling_weight * positive_score).sum()
@@ -379,19 +381,7 @@ class KGReasoning(nn.Module):
         negative_sample_loss /= subsampling_weight.sum()
 
         membership_loss = -F.logsigmoid(membership_logit).mean()
-        
-        
-        # mask = corner_logit > 0
-        # if torch.sum(mask) == 0:
-            # corner_loss = torch.zeros(1).to(positive_sample.device)
-        # else:
-            # corner_loss = corner_logit[mask].mean()
-            
-        corner_score = -F.logsigmoid(corner_logit) * subsampling_weight
-        corner_loss = corner_score.sum() / subsampling_weight.sum()
-
-        # print(corner_loss.item(), positive_sample_loss.item(), negative_sample_loss.item())
-        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss # + corner_loss
+        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss
         loss.backward()
         optimizer.step()
         
@@ -400,20 +390,9 @@ class KGReasoning(nn.Module):
             'positive_sample_loss': positive_sample_loss.item(),
             'negative_sample_loss': negative_sample_loss.item(),
             'membership_loss': membership_loss.item(),
-            'loss': loss.item(),
-            'corner_loss': corner_loss.item(),
-            'disjoint': all_disjoints,
-            'total_boxes': all_total_boxes
+            'loss': loss.item()
         }
         
-        # if corner_loss.item() > 0:
-            # log['corner_loss'] = corner_loss.item()
-        # if all_disjoints > 0:
-            # log['disjoint'] = all_disjoints
-            # log['total_boxes'] = all_total_boxes
-        # else:
-            # log['disjoint'] = 1
-            # log['total_boxes'] = 1
         return log
 
     @staticmethod
@@ -439,7 +418,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit, _, _, idxs, _, _, _ = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+                _, negative_logit, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)
