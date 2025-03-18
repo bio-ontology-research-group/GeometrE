@@ -6,17 +6,13 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 class Box():
-    def __init__(self, center, offset=None, negated_component=None, check_shape=True, as_point=False):
+    def __init__(self, center, offset=None, check_shape=True, as_point=False):
         
-        if check_shape and not as_point:
-            assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
-            if negated_component is not None:
-                assert center.shape == negated_component.center.shape, f"center: {center.shape}, negated_component: {negated_component.center.shape}"
-                assert center.shape == negated_component.offset.shape, f"center: {center.shape}, negated_component: {negated_component.offset.shape}"
-            
+        # if check_shape and not as_point:
+            # assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
+                                            
         self.center = center
         self.offset = offset if offset is not None else th.zeros_like(center)
-        self.negated_component = negated_component
         
     def __len__(self):
         return len(self.center)
@@ -30,42 +26,22 @@ class Box():
     def upper(self):
         return self.center + self.offset
 
-    def set_negated_box_component(self, box):
-        self.negated_component = box
-    
     @staticmethod
     def cat(boxes, dim=0):
-        negated_components = [box.negated_component for box in boxes if box.negated_component is not None]
-        if len(negated_components) != 0:
-            negated_components_centers = th.cat([box.center for box in negated_components], dim=dim)
-            negated_components_offsets = th.cat([box.offset for box in negated_components], dim=dim)
-            negated_boxes = Box(negated_components_centers, negated_components_offsets)
-        else:
-            negated_boxes = None
-            
         centers = th.cat([box.center for box in boxes], dim=dim)
         offsets = th.cat([box.offset for box in boxes], dim=dim)
-        return Box(centers, offsets, negated_component=negated_boxes)
+        return Box(centers, offsets)
                 
     def slice(self, index_tensor):
-        if self.negated_component is not None:
-            negated_component = self.negated_component.slice(index_tensor)
-        return Box(self.center[index_tensor], self.offset[index_tensor], negated_component=negated_component)
+        return Box(self.center[index_tensor], self.offset[index_tensor])
 
     def mask(self, mask):
-        if self.negated_component is not None:
-            negated_component = self.negated_component.mask(mask)
-        else:
-            negated_component = None
-        return Box(self.center[mask], self.offset[mask], negated_component=negated_component, check_shape=False)
+        return Box(self.center[mask], self.offset[mask])
 
     def assign_with_mask(self, mask, box):
         self.center[mask] = box.center
         self.offset[mask] = box.offset
 
-        if box.negated_component is not None:
-            self.negated_component.assign_with_mask(mask, box.negated_component)
-        
     def project_backup(self, projection_dims):
         box_shape = self.center.shape
         bs = box_shape[0]
@@ -116,13 +92,14 @@ class Box():
         self.center = self.center.view(*box_shape)
         self.offset = self.offset.view(*box_shape)
         
-        
         return self, non_projected_box
 
     
-    def translate(self, translation_mul, translation_add, scaling_mul, scaling_add):
-        new_center = self.center * translation_mul + translation_add
-        new_offset = th.abs(self.offset * scaling_mul + scaling_add)
+    def transform(self, cen_mul, cen_add, off_mul, off_add, make_abs=True):
+        new_center = self.center * cen_mul + cen_add
+        new_offset = self.offset * off_mul + off_add
+        if make_abs:
+            new_offset = th.abs(new_offset)
         return Box(new_center, new_offset)
 
     @staticmethod
@@ -143,9 +120,10 @@ class Box():
 
         # assert th.all(loss != -1), f"loss: {loss}"
         return loss
-
+    
     @staticmethod
     def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False):
+        # return box_1.box_composed_score(box_1, box_2, alpha, trans_inv, trans_not_inv, negative=negative)
         bs, *_ = box_1.center.shape
         hid_dim = box_1.center.shape[-1]
         
@@ -174,7 +152,6 @@ class Box():
             single_dim_boxes_1 = Box(single_centers_1, single_offsets_1)
             single_dim_boxes_2 = Box(single_centers_2, single_offsets_2)
         
-        
         inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative)
 
         if len(projection_dims) > 0:
@@ -186,7 +163,7 @@ class Box():
             order_loss[trans_inv] = inv_loss
 
         weight = 1/hid_dim
-        
+        # return inclusion_loss 
         return weight*order_loss + inclusion_loss
 
     @staticmethod
@@ -203,26 +180,7 @@ class Box():
             corner_loss = th.zeros_like(loss)
         return loss + corner_loss
 
-    @staticmethod
-    def box_not_inclusion_score(box_1, box_2, negative=False):
-        lower_condition = th.min(th.relu(box_2.center - box_1.lower), dim=-1).values
-        upper_condition = th.min(th.relu(box_1.upper - box_2.center), dim=-1).values
-        # lower_condition = th.linalg.norm(th.relu(box_2.center - box_1.lower), dim=-1, ord=1)
-        # upper_condition = th.linalg.norm(th.relu(box_1.upper - box_2.center), dim=-1, ord=1)
-        loss = th.min(lower_condition, upper_condition)
-        return loss
 
-    @staticmethod
-    def box_inclusion_with_negation_score(box_1, box_2, alpha, negative=False):
-        inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative=negative)
-        not_inclusion_loss = Box.box_not_inclusion_score(box_1.negated_component, box_2, negative=negative)
-        # if negative:
-            # not_inclusion_loss = th.zeros_like(inclusion_loss)
-        # else:
-            
-        return inclusion_loss + not_inclusion_loss
-
-    
     @staticmethod
     def box_order_score(box_1, box_2, negative, inverse=False):
         
@@ -230,15 +188,20 @@ class Box():
             order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         else:
             order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
-                                                                
-        return order_loss
+            
+
+        if not negative:
+            corner_loss = Box.corner_loss(box_1)
+        else:
+            corner_loss = th.zeros_like(order_loss)
+            
+        return order_loss + corner_loss
 
     @staticmethod
     def corner_loss(box):
         loss = th.linalg.norm(th.relu(box.lower - box.upper), dim=-1, ord=1)
         return loss
 
-                        
     @staticmethod
     def _get_lower_and_upper_corners(box1, box2):
         lower = th.max(box1.center - box1.offset, box2.center - box2.offset)
@@ -262,10 +225,7 @@ class Box():
     @staticmethod
     def intersection_with_negation(position, *boxes, include_negated_component=False):
         boxes = list(boxes)
-        num_boxes = len(boxes)
         position -= 1
-        box_to_negate = boxes.pop(position)
+        _ = boxes.pop(position)
         intermediate_intersection = Box.intersection(*boxes)
-        if include_negated_component:
-            intermediate_intersection.set_negated_box_component(box_to_negate)
         return intermediate_intersection

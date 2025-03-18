@@ -70,7 +70,7 @@ class KGReasoning(nn.Module):
         self.offset_embedding = nn.Embedding(nentity, self.entity_dim)
         nn.init.uniform_(
             tensor=self.offset_embedding.weight,
-            a=0., 
+            a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
 
@@ -81,30 +81,30 @@ class KGReasoning(nn.Module):
             b=self.embedding_range.item()
         )
         
-        self.translation_mul = nn.Embedding(nrelation, self.relation_dim)
+        self.center_mul = nn.Embedding(nrelation, self.relation_dim)
         nn.init.uniform_(
-            tensor=self.translation_mul.weight,
+            tensor=self.center_mul.weight,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
 
-        self.translation_add = nn.Embedding(nrelation, self.relation_dim)
+        self.center_add = nn.Embedding(nrelation, self.relation_dim)
         nn.init.uniform_(
-            tensor=self.translation_add.weight,
+            tensor=self.center_add.weight,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
 
-        self.scaling_mul = nn.Embedding(nrelation, self.relation_dim)
+        self.offset_mul = nn.Embedding(nrelation, self.relation_dim)
         nn.init.uniform_(
-            tensor=self.scaling_mul.weight,
+            tensor=self.offset_mul.weight,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
 
-        self.scaling_add = nn.Embedding(nrelation, self.relation_dim)
+        self.offset_add = nn.Embedding(nrelation, self.relation_dim)
         nn.init.uniform_(
-            tensor=self.scaling_add.weight,
+            tensor=self.offset_add.weight,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
@@ -121,41 +121,46 @@ class KGReasoning(nn.Module):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=transitive)
 
 
-    def embedding_1p(self, data):
-        return E.embedding_1p(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids)
+    def get_box_data(self):
+        return self.entity_embedding, self.offset_embedding
+    def get_role_data(self):
+        return self.center_mul, self.center_add, self.offset_mul, self.offset_add
 
-    def embedding_2p(self, data):
-        return E.embedding_2p(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids)
+    def embedding_1p(self, data, transitive):
+        return E.embedding_1p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
-    def embedding_3p(self, data):
-        return E.embedding_3p(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids)
+    def embedding_2p(self, data, transitive):
+        return E.embedding_2p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
-    def embedding_2i(self, data):
-        return E.embedding_2i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_3p(self, data, transitive):
+        return E.embedding_3p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
-    def embedding_3i(self, data):
-        return E.embedding_3i(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_2i(self, data, transitive):
+        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
 
-    def embedding_2in(self, data):
-        return E.embedding_2in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_3i(self, data, transitive):
+        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+
+    def embedding_2in(self, data, transitive):
+        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
     
-    def embedding_3in(self, data):
-        return E.embedding_3in(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_3in(self, data, transitive):
+        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
 
-    def embedding_pi(self, data):
-        return E.embedding_pi(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_pi(self, data, transitive):
+        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
 
-    def embedding_ip(self, data):
-        return E.embedding_ip(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_ip(self, data, transitive):
+        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
 
-    def embedding_inp(self, data):
-        return E.embedding_inp(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_inp(self, data, transitive):
+        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
          
-    def embedding_pin(self, data):
-        return E.embedding_pin(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_pin(self, data, transitive):
+        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
 
-    def embedding_pni(self, data):
-        return E.embedding_pni(data, self.entity_embedding, self.offset_embedding, self.translation_mul, self.translation_add, self.scaling_mul, self.scaling_add, self.transitive_ids, self.inverse_ids, self.inter_translation)
+    def embedding_pni(self, data, transitive):
+        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
     
     def get_embedding_fn(self, task_name):
         """
@@ -178,14 +183,14 @@ class KGReasoning(nn.Module):
         }[task_name]
     
     
-    def embed_query_box(self, queries, query_type):
+    def embed_query_box(self, queries, query_type, transitive):
         '''
         Iterative embed a batch of queries with same structure using Query2box
         queries: a flattened batch of queries
         '''
         
         embedding_fn = self.get_embedding_fn(query_type)
-        return embedding_fn(queries)
+        return embedding_fn(queries, transitive)
 
 
     def transform_union_query(self, queries, query_structure):
@@ -209,12 +214,8 @@ class KGReasoning(nn.Module):
     def cal_membership_logit(self, entity_embedding, box_embedding):
         return Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha)
         
-    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False, inter_neg=False):
-        if inter_neg:
-            # logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
-            logit = Box.box_inclusion_with_negation_score(box_embedding, entity_embedding, self.alpha, negative=negative)
-            
-        elif transitive:
+    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
+        if transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
             logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative)
         else:
@@ -225,26 +226,18 @@ class KGReasoning(nn.Module):
     def forward_box(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
         all_boxes, all_idxs, all_trans_masks, all_inv_masks, all_projection_dims = [], [], [], [], []
         all_union_boxes, all_union_idxs, all_union_trans_masks, all_union_inv_masks, all_union_projection_dims = [], [], [], [], []
-        all_inter_neg_boxes, all_inter_neg_idxs, all_inter_neg_trans_masks, all_inter_neg_inv_masks, all_inter_neg_projection_dims = [], [], [], [], []
         for query_structure in batch_queries_dict:
             query_type = self.query_name_dict[query_structure]
             if 'u' in self.query_name_dict[query_structure]:
                 query_type = self.query_name_dict[self.transform_union_structure(query_structure)]
-                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type)
+                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type, transitive)
                 all_union_boxes.append(boxes)
                 all_union_idxs.extend(batch_idxs_dict[query_structure])
                 all_union_trans_masks.append(trans_mask)
                 all_union_inv_masks.append(inv_mask)
                 all_union_projection_dims.append(projection_dims)
-            elif self.query_name_dict[query_structure] in ["2in", "3in", "pni", "pin"]:
-                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type)
-                all_inter_neg_boxes.append(boxes)
-                all_inter_neg_idxs.extend(batch_idxs_dict[query_structure])
-                all_inter_neg_trans_masks.append(trans_mask)
-                all_inter_neg_inv_masks.append(inv_mask)
-                all_inter_neg_projection_dims.append(projection_dims)
             else:
-                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type)
+                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type, transitive)
                 all_boxes.append(boxes)
                 all_idxs.extend(batch_idxs_dict[query_structure])
                 all_trans_masks.append(trans_mask)
@@ -265,19 +258,8 @@ class KGReasoning(nn.Module):
             all_union_trans_masks = torch.cat(all_union_trans_masks, dim=0)
             all_union_inv_masks = torch.cat(all_union_inv_masks, dim=0)
             all_union_projection_dims = torch.cat(all_union_projection_dims, dim=0).long()
-        if len(all_inter_neg_boxes) > 0:
-            all_inter_neg_boxes = Box.cat(all_inter_neg_boxes, dim=0)
-            all_inter_neg_boxes.center = all_inter_neg_boxes.center.unsqueeze(1)
-            all_inter_neg_boxes.offset = all_inter_neg_boxes.offset.unsqueeze(1)
-            all_inter_neg_boxes.negated_component.center = all_inter_neg_boxes.negated_component.center.unsqueeze(1)
-            all_inter_neg_boxes.negated_component.offset = all_inter_neg_boxes.negated_component.offset.unsqueeze(1)
-            
-            all_inter_neg_trans_masks = torch.cat(all_inter_neg_trans_masks, dim=0)
-            all_inter_neg_inv_masks = torch.cat(all_inter_neg_inv_masks, dim=0)
-            all_inter_neg_projection_dims = torch.cat(all_inter_neg_projection_dims, dim=0).long()
-
         if type(subsampling_weight) != type(None):
-            subsampling_weight = subsampling_weight[all_idxs+all_union_idxs+all_inter_neg_idxs]
+            subsampling_weight = subsampling_weight[all_idxs+all_union_idxs]
 
         if type(positive_sample) != type(None):
             if len(all_boxes) > 0:
@@ -297,15 +279,7 @@ class KGReasoning(nn.Module):
                 positive_union_logit = torch.max(positive_union_logit, dim=1)[0]
             else:
                 positive_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-            if len(all_inter_neg_boxes) > 0:
-                positive_sample_inter_neg = positive_sample[all_inter_neg_idxs]
-                positive_center_embedding = self.answer_embedding(positive_sample_inter_neg).unsqueeze(1)
-                positive_box = Box(positive_center_embedding, as_point=True)
-                positive_inter_neg_logit = self.cal_logit_box(positive_box, all_inter_neg_boxes, all_inter_neg_inv_masks, all_inter_neg_trans_masks, all_inter_neg_projection_dims, transitive=transitive, inter_neg=True)
-            else:
-                positive_inter_neg_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-
-            positive_logit = torch.cat([positive_logit, positive_union_logit, positive_inter_neg_logit], dim=0)
+            positive_logit = torch.cat([positive_logit, positive_union_logit], dim=0)
         else:
             positive_logit = None
             
@@ -330,17 +304,7 @@ class KGReasoning(nn.Module):
             else:
                 negative_union_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
 
-            if len(all_inter_neg_boxes) > 0:
-                negative_sample_inter_neg = negative_sample[all_inter_neg_idxs]
-                batch_size, negative_size = negative_sample_inter_neg.shape
-                negative_center_embedding = self.answer_embedding(negative_sample_inter_neg.view(-1)).view(batch_size, negative_size, -1)
-                negative_box = Box(negative_center_embedding, as_point=True)
-                negative_inter_neg_logit = self.cal_logit_box(negative_box, all_inter_neg_boxes, all_inter_neg_inv_masks, all_inter_neg_trans_masks, all_inter_neg_projection_dims, negative=True, transitive=transitive, inter_neg=True)
-            else:
-                negative_inter_neg_logit = torch.Tensor([]).to(self.entity_embedding.weight.device)
-
-                
-            negative_logit = torch.cat([negative_logit, negative_union_logit, negative_inter_neg_logit], dim=0)
+            negative_logit = torch.cat([negative_logit, negative_union_logit], dim=0)
         else:
             negative_logit = None
 
@@ -348,7 +312,7 @@ class KGReasoning(nn.Module):
         all_answer_boxes = Box(self.answer_embedding.weight, as_point=True)
         membership_logit = self.cal_membership_logit(all_answer_boxes, all_query_boxes)
         
-        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs+all_inter_neg_idxs
+        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs
     
     @staticmethod
     def train_step(model, optimizer, train_iterator, args, step):

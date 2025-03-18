@@ -453,35 +453,30 @@ def main(args):
     
     if args.do_train:
         training_logs = []
-        # Combine all train queries into a single iterator
-        all_train_queries = flatten_query(train_queries)
-        train_iterator = SingledirectionalOneShotIterator(DataLoader(
-                                    TrainDataset(all_train_queries, nentity, nrelation, args.negative_sample_size, train_answers),
-                                    batch_size=args.batch_size,
-                                    shuffle=True,
-                                    num_workers=args.cpu_num,
-                                    collate_fn=TrainDataset.collate_fn
-                                ))
-
-        # Pre-calculate warm_up_steps
-        warm_up_steps = args.max_steps // 2
-
-        #Training Loop
+        # #Training Loop
         for step in range(init_step, args.max_steps):
             if step == 2*args.max_steps//3:
                 args.valid_steps *= 4
 
-            log = model.train_step(model, optimizer, train_iterator, args, step)
+            log = model.train_step(model, optimizer, train_path_iterator, args, step)
+            for metric in log:
+                writer.add_scalar('path_'+metric, log[metric], step)
             training_logs.append(log)
+            if train_other_iterator is not None:
+                log = model.train_step(model, optimizer, train_other_iterator, args, step)
+                for metric in log:
+                    writer.add_scalar('other_'+metric, log[metric], step)
+                training_logs.append(log)
+                log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
             if step >= warm_up_steps:
                 current_learning_rate = current_learning_rate / 5
                 logging.info('Change learning_rate to %f at step %d' % (current_learning_rate, step))
                 optimizer = torch.optim.Adam(
-                    filter(lambda p: p.requires_grad, model.parameters()),
+                    filter(lambda p: p.requires_grad, model.parameters()), 
                     lr=current_learning_rate
                 )
-                warm_up_steps = args.max_steps * 2  # Ensure lr doesn't decrease again
+                warm_up_steps = warm_up_steps * 1.5
             
             if step % args.save_checkpoint_steps == 0:
                 save_variable_list = {
