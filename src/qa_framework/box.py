@@ -8,9 +8,6 @@ logger.setLevel(logging.INFO)
 class Box():
     def __init__(self, center, offset=None, check_shape=True, as_point=False):
         
-        # if check_shape and not as_point:
-            # assert center.shape == offset.shape, f"center: {center.shape}, offset: {offset.shape}"
-                                            
         self.center = center
         self.offset = offset if offset is not None else th.zeros_like(center)
         
@@ -41,33 +38,7 @@ class Box():
     def assign_with_mask(self, mask, box):
         self.center[mask] = box.center
         self.offset[mask] = box.offset
-
-    def project_backup(self, projection_dims):
-        box_shape = self.center.shape
-        bs = box_shape[0]
-        dim = box_shape[-1]
-
-        reshaped_self_center = self.center.view(bs, -1, dim)
-        reshaped_self_offset = self.offset.view(bs, -1, dim)
-        reshaped_box = Box(reshaped_self_center, reshaped_self_offset)
-
-        intermediate_dim = reshaped_self_center.shape[1]
-        
-        projection_dims = projection_dims.unsqueeze(1).expand(bs, intermediate_dim)
-        bs_ids = th.arange(bs, device=self.center.device).unsqueeze(1).expand(bs, intermediate_dim)
-        ns_ids = th.arange(intermediate_dim, device=self.center.device).expand(bs, intermediate_dim)
-
-        non_projected_center = reshaped_box.center[bs_ids, ns_ids, projection_dims].reshape(*box_shape[:-1]).unsqueeze(-1)
-        non_projected_offset = reshaped_box.offset[bs_ids, ns_ids, projection_dims].reshape(*box_shape[:-1]).unsqueeze(-1)
-        non_projected_box = Box(non_projected_center, non_projected_offset)
-            
-        self.center[bs_ids, ns_ids, projection_dims] = 0
-        self.offset[bs_ids, ns_ids, projection_dims] = 0
-        self.center = self.center.view(*box_shape)
-        self.offset = self.offset.view(*box_shape)
-        projected_box = Box(self.center, self.offset)
-        
-        return projected_box, non_projected_box
+ 
 
     def project(self, projection_dims):
         box_shape = self.center.shape
@@ -168,7 +139,7 @@ class Box():
 
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False):
-        
+                                                        
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
@@ -185,10 +156,13 @@ class Box():
     def box_order_score(box_1, box_2, negative, inverse=False):
         
         if inverse:
-            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
+            dist_outside = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
+            dist_inside = th.linalg.norm(box_1.center - th.max(box_1.lower, box_2.center), dim=-1, ord=1)
+            order_loss = dist_outside + dist_inside
         else:
-            order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
-            
+            dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
+            dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, box_2.center), dim=-1, ord=1)
+            order_loss = dist_outside + dist_inside
 
         if not negative:
             corner_loss = Box.corner_loss(box_1)

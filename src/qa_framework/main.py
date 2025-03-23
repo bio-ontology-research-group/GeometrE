@@ -340,7 +340,7 @@ def main(args):
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.cpu_num,
-                                    collate_fn=TrainDataset.collate_fn
+                                    collate_fn=TrainDataset.collate_fn,
                                 ))
         if len(train_other_queries) > 0:
             train_other_queries = flatten_query(train_other_queries)
@@ -349,7 +349,7 @@ def main(args):
                                         batch_size=args.batch_size,
                                         shuffle=True,
                                         num_workers=args.cpu_num,
-                                        collate_fn=TrainDataset.collate_fn
+                                        collate_fn=TrainDataset.collate_fn,
                                     ))
         else:
             train_other_iterator = None
@@ -467,7 +467,7 @@ def main(args):
                 for metric in log:
                     writer.add_scalar('other_'+metric, log[metric], step)
                 training_logs.append(log)
-                log = model.train_step(model, optimizer, train_path_iterator, args, step)
+                # log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
             if step >= warm_up_steps:
                 current_learning_rate = current_learning_rate / 5
@@ -498,17 +498,8 @@ def main(args):
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
-                    if metric in ["disjoint", "total_boxes", "corner_loss"]:
-                        non_zeros = [log[metric] for log in training_logs if log[metric] > 0]
-                        if len(non_zeros) > 0:
-                            metrics[metric] = sum(non_zeros) / len(non_zeros)
-                        else:
-                            metrics[metric] = 0
-                    else:
-                        metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
+                    metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
 
-
-                    
                 log_metrics('Training average', step, metrics)
                 training_logs = []
 

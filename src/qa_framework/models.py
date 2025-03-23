@@ -70,12 +70,7 @@ class KGReasoning(nn.Module):
         self.center_add = self.init_embeddings(nrelation, self.relation_dim)
         self.offset_mul = self.init_embeddings(nrelation, self.relation_dim)
         self.offset_add = self.init_embeddings(nrelation, self.relation_dim)
-
-        self.inter_center_mul = self.init_embeddings(nrelation, self.relation_dim)
-        self.inter_center_add = self.init_embeddings(nrelation, self.relation_dim)
-        self.inter_offset_mul = self.init_embeddings(nrelation, self.relation_dim)
-        self.inter_offset_add = self.init_embeddings(nrelation, self.relation_dim)
-
+                         
     def init_embeddings(self, num_embeddings, dim, init="default"):
         embedding = nn.Embedding(num_embeddings, dim)
         if init == "default":
@@ -89,9 +84,9 @@ class KGReasoning(nn.Module):
                 tensor=embedding.weight
             )
         elif init == "zeros":
-                nn.init.zeros_(
-                        tensor=embedding.weight
-                )
+            nn.init.zeros_(
+                tensor=embedding.weight
+            )
         else:
             raise ValueError("Unknown init method")
         return embedding
@@ -105,9 +100,7 @@ class KGReasoning(nn.Module):
     def get_role_data(self):
         return self.center_mul, self.center_add, self.offset_mul, self.offset_add
 
-    def get_inter_data(self):
-        return self.inter_center_mul, self.inter_center_add, self.inter_offset_mul, self.inter_offset_add
-    
+            
     def embedding_1p(self, data, transitive):
         return E.embedding_1p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
@@ -118,31 +111,31 @@ class KGReasoning(nn.Module):
         return E.embedding_3p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2i(self, data, transitive):
-        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_3i(self, data, transitive):
-        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2in(self, data, transitive):
-        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
     
     def embedding_3in(self, data, transitive):
-        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_pi(self, data, transitive):
-        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_ip(self, data, transitive):
-        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_inp(self, data, transitive):
-        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
          
     def embedding_pin(self, data, transitive):
-        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_pni(self, data, transitive):
-        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
+        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
     
     def get_embedding_fn(self, task_name):
         """
