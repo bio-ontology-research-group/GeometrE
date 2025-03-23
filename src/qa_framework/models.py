@@ -60,72 +60,54 @@ class KGReasoning(nn.Module):
             requires_grad=False
         )
         
-        self.entity_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.entity_embedding.weight,
-            a=-self.embedding_range.item(), 
-            b=self.embedding_range.item()
-        )
+        self.entity_embedding = self.init_embeddings(nentity, self.entity_dim)
 
-        self.offset_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.offset_embedding.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.offset_embedding = self.init_embeddings(nentity, self.entity_dim)
 
-        self.answer_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.answer_embedding.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-        
-        self.center_mul = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.center_mul.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.answer_embedding = self.init_embeddings(nentity, self.entity_dim)
 
-        self.center_add = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.center_add.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.center_mul = self.init_embeddings(nrelation, self.relation_dim)
+        self.center_add = self.init_embeddings(nrelation, self.relation_dim)
+        self.offset_mul = self.init_embeddings(nrelation, self.relation_dim)
+        self.offset_add = self.init_embeddings(nrelation, self.relation_dim)
 
-        self.offset_mul = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.offset_mul.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.inter_center_mul = self.init_embeddings(nrelation, self.relation_dim)
+        self.inter_center_add = self.init_embeddings(nrelation, self.relation_dim)
+        self.inter_offset_mul = self.init_embeddings(nrelation, self.relation_dim)
+        self.inter_offset_add = self.init_embeddings(nrelation, self.relation_dim)
 
-        self.offset_add = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.offset_add.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.inter_translation = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.inter_translation.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
+    def init_embeddings(self, num_embeddings, dim, init="default"):
+        embedding = nn.Embedding(num_embeddings, dim)
+        if init == "default":
+            nn.init.uniform_(
+                tensor=embedding.weight,
+                a=-self.embedding_range.item(),
+                b=self.embedding_range.item()
+            )
+        elif init == "ones":
+            nn.init.ones_(
+                tensor=embedding.weight
+            )
+        elif init == "zeros":
+                nn.init.zeros_(
+                        tensor=embedding.weight
+                )
+        else:
+            raise ValueError("Unknown init method")
+        return embedding
         
     def forward(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=transitive)
 
-
     def get_box_data(self):
         return self.entity_embedding, self.offset_embedding
+
     def get_role_data(self):
         return self.center_mul, self.center_add, self.offset_mul, self.offset_add
 
+    def get_inter_data(self):
+        return self.inter_center_mul, self.inter_center_add, self.inter_offset_mul, self.inter_offset_add
+    
     def embedding_1p(self, data, transitive):
         return E.embedding_1p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
@@ -136,31 +118,31 @@ class KGReasoning(nn.Module):
         return E.embedding_3p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2i(self, data, transitive):
-        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_3i(self, data, transitive):
-        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_2in(self, data, transitive):
-        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
     
     def embedding_3in(self, data, transitive):
-        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_pi(self, data, transitive):
-        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_ip(self, data, transitive):
-        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_inp(self, data, transitive):
-        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
          
     def embedding_pin(self, data, transitive):
-        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
 
     def embedding_pni(self, data, transitive):
-        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.get_inter_data())
     
     def get_embedding_fn(self, task_name):
         """
@@ -345,6 +327,10 @@ class KGReasoning(nn.Module):
         negative_sample_loss /= subsampling_weight.sum()
 
         membership_loss = -F.logsigmoid(membership_logit).mean()
+
+        # lambda_reg = 0.1
+        # reg = lambda_reg * (((model.center_mul.weight - 1.0) ** 2).mean() + ((model.center_add.weight) ** 2).mean() + ((model.offset_mul.weight - 1.0) ** 2).mean() + ((model.offset_add.weight) ** 2).mean())
+        
         loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss
         loss.backward()
         optimizer.step()
