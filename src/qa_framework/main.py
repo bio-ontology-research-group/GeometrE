@@ -65,7 +65,7 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true', help="do train")
     parser.add_argument('--do_valid', action='store_true', help="do valid")
     parser.add_argument('--do_test', action='store_true', help="do test")
-
+    parser.add_argument('--do_test_tr', action='store_true', help="do test transitive")
     parser.add_argument('--data_path', type=str, default="data/WN18RR-QA", help="KG data path")
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int, help="negative entities sampled per query")
     parser.add_argument('-d', '--hidden_dim', default=500, type=int, help="embedding dimension")
@@ -74,7 +74,7 @@ def parse_args(args=None):
     parser.add_argument('-b', '--batch_size', default=1024, type=int, help="batch size of queries")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
-    parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
+    parser.add_argument('-cpu', '--cpu_num', default=10, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
     parser.add_argument('--max_steps', default=100001, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
@@ -191,14 +191,27 @@ def load_data(args, tasks):
         # test_queries = pickle.load(open(os.path.join(args.data_path, "new-test-queries.pkl"), 'rb'))
     # else:
     train_queries = pickle.load(open(os.path.join(args.data_path, "train-queries.pkl"), 'rb'))
-    valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
-    test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
+
+    if args.do_test_tr:
+        valid_queries = pickle.load(open(os.path.join(args.data_path, "transitive-valid-queries.pkl"), 'rb'))
+        test_queries = pickle.load(open(os.path.join(args.data_path, "transitive-test-queries.pkl"), 'rb'))
+    else:
+        valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
+        test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
 
     train_answers = pickle.load(open(os.path.join(args.data_path, "train-answers.pkl"), 'rb'))
-    valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
-    valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
-    test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
-    test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
+
+    if args.do_test_tr:
+        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "transitive-valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "transitive-valid-easy-answers.pkl"), 'rb'))
+        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "transitive-test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "transitive-test-easy-answers.pkl"), 'rb'))
+        
+    else:
+        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
+        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
 
     rel2id = pickle.load(open(os.path.join(args.data_path, "rel2id.pkl"), 'rb'))
     
@@ -334,7 +347,7 @@ def main(args):
                                     batch_size=args.batch_size,
                                     shuffle=True,
                                     num_workers=args.cpu_num,
-                                    collate_fn=TrainDataset.collate_fn
+                                    collate_fn=TrainDataset.collate_fn,
                                 ))
         if len(train_other_queries) > 0:
             train_other_queries = flatten_query(train_other_queries)
@@ -343,7 +356,7 @@ def main(args):
                                         batch_size=args.batch_size,
                                         shuffle=True,
                                         num_workers=args.cpu_num,
-                                        collate_fn=TrainDataset.collate_fn
+                                        collate_fn=TrainDataset.collate_fn,
                                     ))
         else:
             train_other_iterator = None
@@ -366,7 +379,7 @@ def main(args):
 
 
     logging.info("Test info:")
-    if args.do_test:
+    if args.do_test or args.do_test_tr:
         for query_structure in test_queries:
             logging.info(query_name_dict[query_structure]+": "+str(len(test_queries[query_structure])))
         test_queries = flatten_query(test_queries)
@@ -461,9 +474,7 @@ def main(args):
                 for metric in log:
                     writer.add_scalar('other_'+metric, log[metric], step)
                 training_logs.append(log)
-                log = model.train_step(model, optimizer, train_path_iterator, args, step)
-
-            
+                # log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
             if step >= warm_up_steps:
                 current_learning_rate = current_learning_rate / 5
@@ -487,24 +498,15 @@ def main(args):
                     logging.info('Evaluating on Valid Dataset...')
                     valid_all_metrics = evaluate(model, valid_easy_answers, valid_hard_answers, args, valid_dataloader, query_name_dict, 'Valid', step, writer, wandb_logger)
 
-                if args.do_test:
+                if args.do_test or args.do_test_tr:
                     logging.info('Evaluating on Test Dataset...')
                     test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
                 
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
-                    if metric in ["disjoint", "total_boxes", "corner_loss"]:
-                        non_zeros = [log[metric] for log in training_logs if log[metric] > 0]
-                        if len(non_zeros) > 0:
-                            metrics[metric] = sum(non_zeros) / len(non_zeros)
-                        else:
-                            metrics[metric] = 0
-                    else:
-                        metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
+                    metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
 
-
-                    
                 log_metrics('Training average', step, metrics)
                 training_logs = []
 
@@ -520,7 +522,7 @@ def main(args):
     except:
         step = 0
 
-    if args.do_test:
+    if args.do_test or args.do_test_tr:
         logging.info('Evaluating on Test Dataset...')
         test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
 
