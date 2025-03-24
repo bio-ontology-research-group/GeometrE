@@ -242,10 +242,6 @@ def main(args):
     args.cuda = True
     wandb_logger = wandb.init(entity="ferzcam", project="box_qa", name=args.description)
 
-    if args.transitive == 'yes':
-        args.transitive = True
-    elif args.transitive == 'no':
-        args.transitive = False
     
     if args.no_sweep:
         wandb_logger.log({"hidden_dim": args.hidden_dim,
@@ -265,14 +261,13 @@ def main(args):
         args.negative_sample_size = wandb.config.negative_sample_size
         args.transitive = wandb.config.transitive
 
-        if args.transitive == 'yes':
-            args.transitive = True
-        elif args.transitive == 'no':
-            args.transitive = False
-        else:
-            raise ValueError("transitive must be 'yes' or 'no'")
+    if args.transitive == 'yes':
+        args.transitive = True
+    elif args.transitive == 'no':
+        args.transitive = False
+    else:
+        raise ValueError("transitive should be 'yes' or 'no'")
         
-    
     set_global_seed(args.seed)
     tasks = args.tasks.split('.')
     for task in tasks:
@@ -401,13 +396,13 @@ def main(args):
         gamma=args.gamma,
         alpha=args.alpha,
         geo=args.geo,
-        use_cuda = args.cuda,
+        use_cuda=args.cuda,
         box_mode=eval_tuple(args.box_mode),
-        beta_mode = eval_tuple(args.beta_mode),
+        beta_mode=eval_tuple(args.beta_mode),
         test_batch_size=args.test_batch_size,
-        query_name_dict = query_name_dict,
-        transitive_ids = transitive_ids,
-        inverse_ids = inverse_ids
+        query_name_dict=query_name_dict,
+        transitive_ids=transitive_ids,
+        inverse_ids=inverse_ids
     )
 
     logging.info('Model Parameter Configuration:')
@@ -474,7 +469,7 @@ def main(args):
                 for metric in log:
                     writer.add_scalar('other_'+metric, log[metric], step)
                 training_logs.append(log)
-                # log = model.train_step(model, optimizer, train_path_iterator, args, step)
+                log = model.train_step(model, optimizer, train_path_iterator, args, step)
 
             if step >= warm_up_steps:
                 current_learning_rate = current_learning_rate / 5

@@ -89,12 +89,10 @@ class Box():
         loss[trans_not_inv] = trans_loss
         loss[trans_inv] = inv_loss
 
-        # assert th.all(loss != -1), f"loss: {loss}"
         return loss
     
     @staticmethod
     def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False):
-        # return box_1.box_composed_score(box_1, box_2, alpha, trans_inv, trans_not_inv, negative=negative)
         bs, *_ = box_1.center.shape
         hid_dim = box_1.center.shape[-1]
         
@@ -134,7 +132,6 @@ class Box():
             order_loss[trans_inv] = inv_loss
 
         weight = 1/hid_dim
-        # return inclusion_loss 
         return weight*order_loss + inclusion_loss
 
     @staticmethod
@@ -156,14 +153,9 @@ class Box():
     def box_order_score(box_1, box_2, negative, inverse=False):
         
         if inverse:
-            dist_outside = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
-            dist_inside = th.linalg.norm(box_1.center - th.max(box_1.lower, box_2.center), dim=-1, ord=1)
-            order_loss = dist_outside + dist_inside
+            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         else:
-            dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
-            dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, box_2.center), dim=-1, ord=1)
-            order_loss = dist_outside + dist_inside
-
+            order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
         if not negative:
             corner_loss = Box.corner_loss(box_1)
         else:
