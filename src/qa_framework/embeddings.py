@@ -49,23 +49,23 @@ def get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add,
 def embedding_1p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     # (('e', ('r',)),): '1p'
     c, c_offset = get_box_data(box_data, data[:, 0])
-    transf_data, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
+    transf_data, _, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     return Box(c, c_offset).transform(*transf_data), *transitive_data
 
 def embedding_2p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c, c_offset = get_box_data(box_data, data[:, 0])
 
-    transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
-    transf_data_2, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
+    transf_data_1, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
+    transf_data_2, _, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
 
     box = Box(c, c_offset).transform(*transf_data_1).transform(*transf_data_2)
     return box, *transitive_data
 
 def embedding_3p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c, c_offset = get_box_data(box_data, data[:, 0])
-    transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
-    transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
-    transf_data_3, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
+    transf_data_1, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
+    transf_data_2, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
+    transf_data_3, _, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
     
     box = Box(c, c_offset).transform(*transf_data_1).transform(*transf_data_2).transform(*transf_data_3)
     return box, *transitive_data
