@@ -77,12 +77,13 @@ class KGReasoning(nn.Module):
     def forward(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=transitive)
 
-
     def get_box_data(self):
         return self.entity_embedding, self.offset_embedding
+
     def get_role_data(self):
         return self.center_mul, self.center_add, self.offset_mul, self.offset_add
 
+            
     def embedding_1p(self, data, transitive):
         return E.embedding_1p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
@@ -302,6 +303,10 @@ class KGReasoning(nn.Module):
         negative_sample_loss /= subsampling_weight.sum()
 
         membership_loss = -F.logsigmoid(membership_logit).mean()
+
+        # lambda_reg = 0.1
+        # reg = lambda_reg * (((model.center_mul.weight - 1.0) ** 2).mean() + ((model.center_add.weight) ** 2).mean() + ((model.offset_mul.weight - 1.0) ** 2).mean() + ((model.offset_add.weight) ** 2).mean())
+        
         loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss
         loss.backward()
         optimizer.step()
