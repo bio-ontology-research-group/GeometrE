@@ -77,8 +77,8 @@ def embedding_2i(data, box_data, role_data, transitive_ids, inverse_ids, transit
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
     transf_data_2, r_2_inter, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 3])
     
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(id_mul, r_1_inter, id_mul, id_add)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
 
     false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
@@ -94,9 +94,9 @@ def embedding_3i(data, box_data, role_data, transitive_ids, inverse_ids, transit
     c_3, c_3_offset = get_box_data(box_data, data[:, 4])
     transf_data_3, r_3_inter, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 5])
     
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
-    box_c_3 = Box(c_3, c_3_offset).transform(*transf_data_3)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(id_mul, r_1_inter, id_mul, id_add)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
+    box_c_3 = Box(c_3, c_3_offset).transform(*transf_data_3).transform(id_mul, r_3_inter, id_mul, id_add)
 
     false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
@@ -123,8 +123,8 @@ def embedding_3in(data, box_data, role_data, transitive_ids, inverse_ids, transi
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
     transf_data_2, r_2_inter, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 3])
 
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(id_mul, r_1_inter, id_mul, id_add)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
     
     false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
@@ -140,8 +140,8 @@ def embedding_ip(data, box_data, role_data, transitive_ids, inverse_ids, transit
     
     transf_data_3, _, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, None, data[:, 4])
                 
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(id_mul, r_1_inter, id_mul, id_add)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
 
     box = Box.intersection(box_c_1, box_c_2).transform(*transf_data_3, make_abs=True) # True seems to work better
     return box, *transitive_data
@@ -154,8 +154,8 @@ def embedding_pi(data, box_data, role_data, transitive_ids, inverse_ids, transit
     c_2, c_2_offset = get_box_data(box_data, data[:, 3])
     transf_data_3, r_3_inter, *_ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 4])
 
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2)
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_3)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_3).transform(id_mul, r_3_inter, id_mul, id_add)
 
     false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
@@ -192,7 +192,7 @@ def embedding_pni(data, box_data, role_data, transitive_ids, inverse_ids, transi
     c_2, c_2_offset = get_box_data(box_data, data[:, 4])
     transf_data_3, r_3_inter, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 5])
 
-    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_3)
+    box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_3).transform(id_mul, r_3_inter, id_mul, id_add)
 
     false_tensor = th.zeros(c_2.shape[0]).bool().to(c_2.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_2.device)
