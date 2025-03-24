@@ -498,17 +498,8 @@ def main(args):
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
-                    if metric in ["disjoint", "total_boxes", "corner_loss"]:
-                        non_zeros = [log[metric] for log in training_logs if log[metric] > 0]
-                        if len(non_zeros) > 0:
-                            metrics[metric] = sum(non_zeros) / len(non_zeros)
-                        else:
-                            metrics[metric] = 0
-                    else:
-                        metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
+                    metrics[metric] = sum([log[metric] for log in training_logs])/len(training_logs)
 
-
-                    
                 log_metrics('Training average', step, metrics)
                 training_logs = []
 

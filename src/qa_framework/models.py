@@ -5,20 +5,11 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from dataloader import TestDataset, TrainDataset, SingledirectionalOneShotIterator
-import random
-import pickle
-import math
 import collections
-import itertools
-import time
 from tqdm import tqdm
-import os
 import embeddings as E
 from box import Box
 
@@ -59,63 +50,29 @@ class KGReasoning(nn.Module):
             torch.Tensor([(self.gamma.item() + self.epsilon) / hidden_dim]), 
             requires_grad=False
         )
+
         
-        self.entity_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.entity_embedding.weight,
-            a=-self.embedding_range.item(), 
-            b=self.embedding_range.item()
-        )
-
-        self.offset_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.offset_embedding.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.answer_embedding = nn.Embedding(nentity, self.entity_dim)
-        nn.init.uniform_(
-            tensor=self.answer_embedding.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
         
-        self.center_mul = nn.Embedding(nrelation, self.relation_dim)
+        self.entity_embedding = self.init_embedding(nentity, self.entity_dim)
+        self.offset_embedding = self.init_embedding(nentity, self.entity_dim)
+        self.answer_embedding = self.init_embedding(nentity, self.entity_dim)
+
+        self.center_mul = self.init_embedding(nrelation, self.relation_dim)
+        self.center_add = self.init_embedding(nrelation, self.relation_dim)
+        self.offset_mul = self.init_embedding(nrelation, self.relation_dim)
+        self.offset_add = self.init_embedding(nrelation, self.relation_dim)
+
+        self.inter_add = self.init_embedding(nrelation, self.relation_dim)
+
+    def init_embedding(self, num_embeddings, dimension):
+        embedding = nn.Embedding(num_embeddings, dimension)
         nn.init.uniform_(
-            tensor=self.center_mul.weight,
+            tensor=embedding.weight,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
-
-        self.center_add = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.center_add.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.offset_mul = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.offset_mul.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.offset_add = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.offset_add.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.inter_translation = nn.Embedding(nrelation, self.relation_dim)
-        nn.init.uniform_(
-            tensor=self.inter_translation.weight,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
+        return embedding
+        
         
     def forward(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=transitive)
@@ -136,31 +93,31 @@ class KGReasoning(nn.Module):
         return E.embedding_3p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2i(self, data, transitive):
-        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_3i(self, data, transitive):
-        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_2in(self, data, transitive):
-        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
     
     def embedding_3in(self, data, transitive):
-        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_pi(self, data, transitive):
-        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_ip(self, data, transitive):
-        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_inp(self, data, transitive):
-        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
          
     def embedding_pin(self, data, transitive):
-        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
 
     def embedding_pni(self, data, transitive):
-        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_translation)
+        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
     
     def get_embedding_fn(self, task_name):
         """
