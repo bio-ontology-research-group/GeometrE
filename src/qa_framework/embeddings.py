@@ -176,10 +176,10 @@ def embedding_pin(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r', 'r')), ('e', ('r', 'n')))
     # approximated as 2p. 
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
-    transf_data_1, r_1_inter, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 1])
-    transf_data_2, _, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, None, data[:, 2])
+    transf_data_1, _, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, None, data[:, 1])
+    transf_data_2, r_2_inter, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add, data[:, 2])
     
-    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2).transform(id_mul, r_1_inter, id_mul, id_add)
+    box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2).transform(id_mul, r_2_inter, id_mul, id_add)
 
     false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
     transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
