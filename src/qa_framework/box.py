@@ -40,6 +40,25 @@ class Box():
         self.offset[mask] = box.offset
  
 
+        
+    def forgetful_project(self, projection_dims):
+        box_shape = self.center.shape
+        bs = box_shape[0]
+        dim = box_shape[-1]
+
+        self.center = self.center.view(bs, -1, dim)
+        self.offset = self.offset.view(bs, -1, dim)
+
+        mask = th.ones_like(self.center)
+        mask[:, :, projection_dims] = 0
+        
+        self.center = self.center * mask
+        self.offset = self.offset * mask
+        self.center = self.center.view(*box_shape)
+        self.offset = self.offset.view(*box_shape)
+        
+        return self
+
     def project(self, projection_dims):
         box_shape = self.center.shape
         bs = box_shape[0]
@@ -92,7 +111,7 @@ class Box():
         return loss
     
     @staticmethod
-    def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False):
+    def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False, transitive=False, transitive_ids=None):
         bs, *_ = box_1.center.shape
         hid_dim = box_1.center.shape[-1]
         
@@ -121,7 +140,7 @@ class Box():
             single_dim_boxes_1 = Box(single_centers_1, single_offsets_1)
             single_dim_boxes_2 = Box(single_centers_2, single_offsets_2)
         
-        inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative)
+        inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative, transitive, transitive_ids)
 
         if len(projection_dims) > 0:
             trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), negative)
@@ -135,8 +154,15 @@ class Box():
         return weight*order_loss + inclusion_loss
 
     @staticmethod
-    def box_inclusion_score(box_1, box_2, alpha, negative=False):
-                                                        
+    def box_inclusion_score(box_1, box_2, alpha, negative=False, transitive=False, transitive_ids=None):
+
+        if transitive:
+            # print("Transitive: ", transitive_ids)
+            box_1 = box_1.forgetful_project(transitive_ids)
+            box_2 = box_2.forgetful_project(transitive_ids)
+
+
+        
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
