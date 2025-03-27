@@ -192,27 +192,19 @@ def load_data(args, tasks):
     # else:
     train_queries = pickle.load(open(os.path.join(args.data_path, "train-queries.pkl"), 'rb'))
 
-    if args.do_test_tr:
-        valid_queries = pickle.load(open(os.path.join(args.data_path, "transitive-valid-queries.pkl"), 'rb'))
-        test_queries = pickle.load(open(os.path.join(args.data_path, "transitive-test-queries.pkl"), 'rb'))
-    else:
-        valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
-        test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
-
+    valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
+    test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
+    valid_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-valid-queries.pkl"), 'rb'))
+    test_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-test-queries.pkl"), 'rb'))
+        
     train_answers = pickle.load(open(os.path.join(args.data_path, "train-answers.pkl"), 'rb'))
 
-    if args.do_test_tr:
-        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "transitive-valid-hard-answers.pkl"), 'rb'))
-        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "transitive-valid-easy-answers.pkl"), 'rb'))
-        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "transitive-test-hard-answers.pkl"), 'rb'))
-        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "transitive-test-easy-answers.pkl"), 'rb'))
-        
-    else:
-        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
-        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
-        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
-        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
+    valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
+    valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
+    test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
+    test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
 
+        
     rel2id = pickle.load(open(os.path.join(args.data_path, "rel2id.pkl"), 'rb'))
     
     # remove tasks not in args.tasks
@@ -229,6 +221,10 @@ def load_data(args, tasks):
                 del valid_queries[query_structure]
             if query_structure in test_queries:
                 del test_queries[query_structure]
+            if query_structure in valid_tr_queries:
+                del valid_tr_queries[query_structure]
+            if query_structure in test_tr_queries:
+                del test_tr_queries[query_structure]
 
     dataset_name = args.data_path.split('/')[-1]
     transitive_roles = transitive_roles_dict[dataset_name]
@@ -236,7 +232,7 @@ def load_data(args, tasks):
     transitive_ids = torch.tensor([rel2id[role] for role in transitive_roles], dtype=torch.long)
     inverse_ids = torch.tensor([rel2id[role] for role in inverse_roles], dtype=torch.long)
                 
-    return train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids
+    return train_queries, train_answers, valid_queries, valid_tr_queries, valid_hard_answers, valid_easy_answers, test_queries, test_tr_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids
 
 def main(args):
     args.cuda = True
@@ -322,7 +318,7 @@ def main(args):
     logging.info('#max steps: %d' % args.max_steps)
     logging.info('Evaluate unoins using: %s' % args.evaluate_union)
 
-    train_queries, train_answers, valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids = load_data(args, tasks)        
+    train_queries, train_answers, valid_queries, valid_tr_queries, valid_hard_answers, valid_easy_answers, test_queries, test_tr_queries, test_hard_answers, test_easy_answers, transitive_ids, inverse_ids = load_data(args, tasks)        
 
     logging.info("Training info:")
     if args.do_train:
@@ -374,13 +370,27 @@ def main(args):
 
 
     logging.info("Test info:")
-    if args.do_test or args.do_test_tr:
+    if args.do_test:
         for query_structure in test_queries:
             logging.info(query_name_dict[query_structure]+": "+str(len(test_queries[query_structure])))
         test_queries = flatten_query(test_queries)
         test_dataloader = DataLoader(
             TestDataset(
                 test_queries, 
+                args.nentity, 
+                args.nrelation, 
+            ), 
+            batch_size=args.test_batch_size,
+            num_workers=args.cpu_num, 
+            collate_fn=TestDataset.collate_fn
+        )
+
+        for query_structure in test_tr_queries:
+            logging.info(query_name_dict[query_structure]+": "+str(len(test_tr_queries[query_structure])))
+        test_tr_queries = flatten_query(test_tr_queries)
+        test_tr_dataloader = DataLoader(
+            TestDataset(
+                test_tr_queries, 
                 args.nentity, 
                 args.nrelation, 
             ), 
@@ -493,10 +503,11 @@ def main(args):
                     logging.info('Evaluating on Valid Dataset...')
                     valid_all_metrics = evaluate(model, valid_easy_answers, valid_hard_answers, args, valid_dataloader, query_name_dict, 'Valid', step, writer, wandb_logger)
 
-                if args.do_test or args.do_test_tr:
+                if args.do_test:
                     logging.info('Evaluating on Test Dataset...')
                     test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
-                
+                    logging.info('Evaluation on Transitive Test Dataset:')
+                    test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
@@ -517,9 +528,11 @@ def main(args):
     except:
         step = 0
 
-    if args.do_test or args.do_test_tr:
+    if args.do_test:
         logging.info('Evaluating on Test Dataset...')
         test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
+        logging.info('Evaluation on Transitive Test Dataset:')
+        test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
 
     logging.info("Training finished!!")
 
