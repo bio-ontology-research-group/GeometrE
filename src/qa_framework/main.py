@@ -76,7 +76,7 @@ def parse_args(args=None):
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
     parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
-    parser.add_argument('--max_steps', default=200001, type=int, help="maximum iterations to train")
+    parser.add_argument('--max_steps', default=400001, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
     
     parser.add_argument('--save_checkpoint_steps', default=5000, type=int, help="save checkpoints every xx steps")
@@ -163,7 +163,7 @@ def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, m
         log_metrics(mode+" "+query_name_dict[query_structure], step, metrics[query_structure])
         for metric in metrics[query_structure]:
             query_type = query_name_dict[query_structure]
-            wb_logger.log({f"{query_type}_{metric}": metrics[query_structure][metric]})
+            wb_logger.log({f"{mode}_{query_type}_{metric}": metrics[query_structure][metric]})
             writer.add_scalar("_".join([mode, query_name_dict[query_structure], metric]), metrics[query_structure][metric], step)
             all_metrics["_".join([query_name_dict[query_structure], metric])] = metrics[query_structure][metric]
             if metric != 'num_queries':
@@ -173,7 +173,7 @@ def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, m
 
     for metric in average_metrics:
         average_metrics[metric] /= num_query_structures
-        wb_logger.log({f"avg_{metric}": average_metrics[metric]})
+        wb_logger.log({f"{mode}_avg_{metric}": average_metrics[metric]})
         writer.add_scalar("_".join([mode, 'average', metric]), average_metrics[metric], step)
         all_metrics["_".join(["average", metric])] = average_metrics[metric]
     log_metrics('%s average'%mode, step, average_metrics)
