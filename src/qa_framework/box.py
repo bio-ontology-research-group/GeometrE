@@ -150,21 +150,20 @@ class Box():
             order_loss[trans_not_inv] = trans_loss
             order_loss[trans_inv] = inv_loss
 
-        weight = 1 #/hid_dim
+        weight = 1/hid_dim
         return weight*order_loss + inclusion_loss
 
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False, transitive=False, transitive_ids=None):
 
         if transitive:
-            # print("Transitive: ", transitive_ids)
             box_1 = box_1.forgetful_project(transitive_ids)
             box_2 = box_2.forgetful_project(transitive_ids)
         
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
-        loss = dist_outside + alpha*dist_inside
+        loss = dist_outside + alpha * dist_inside
                  
         if not negative:
             corner_loss = Box.corner_loss(box_1)

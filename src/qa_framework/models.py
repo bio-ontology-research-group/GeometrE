@@ -175,7 +175,9 @@ class KGReasoning(nn.Module):
     def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
         if transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
-            logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative, transitive=transitive, transitive_ids=self.transitive_ids)
+            mask = ~ torch.isin(self.transitive_ids, self.inverse_ids)
+            transitive_only = self.transitive_ids[mask]
+            logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative, transitive=transitive, transitive_ids=transitive_only)
         else:
             logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
         
