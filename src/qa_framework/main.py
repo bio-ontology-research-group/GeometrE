@@ -65,7 +65,7 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true', help="do train")
     parser.add_argument('--do_valid', action='store_true', help="do valid")
     parser.add_argument('--do_test', action='store_true', help="do test")
-    parser.add_argument('--do_test_tr', action='store_true', help="do test transitive")
+    parser.add_argument('--do_test_full_tr', action='store_true', help="do test on saturated transitive set")
     parser.add_argument('--data_path', type=str, default="data/WN18RR-QA", help="KG data path")
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int, help="negative entities sampled per query")
     parser.add_argument('-d', '--hidden_dim', default=500, type=int, help="embedding dimension")
@@ -199,11 +199,19 @@ def load_data(args, tasks):
         
     train_answers = pickle.load(open(os.path.join(args.data_path, "train-answers.pkl"), 'rb'))
 
-    valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
-    valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
-    test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
-    test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
+    if args.do_test_full_tr:
+        valid_queries = valid_tr_queries
+        test_queries = test_tr_queries
+        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "saturated-valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "saturated-valid-easy-answers.pkl"), 'rb'))
+        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "saturated-test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "saturated-test-easy-answers.pkl"), 'rb'))
 
+    else:
+        valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
+        valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
+        test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
+        test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
         
     rel2id = pickle.load(open(os.path.join(args.data_path, "rel2id.pkl"), 'rb'))
     
