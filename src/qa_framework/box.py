@@ -143,8 +143,8 @@ class Box():
         inclusion_loss = Box.box_inclusion_score(box_1, box_2, alpha, negative, transitive, transitive_ids)
 
         if len(projection_dims) > 0:
-            trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), negative)
-            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), negative, inverse=True)
+            trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), alpha, negative)
+            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), alpha, negative, inverse=True)
 
             order_loss[not_trans_or_inv] = 0
             order_loss[trans_not_inv] = trans_loss
@@ -156,9 +156,9 @@ class Box():
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False, transitive=False, transitive_ids=None):
 
-        if transitive:
-            box_1 = box_1.forgetful_project(transitive_ids)
-            box_2 = box_2.forgetful_project(transitive_ids)
+        # if transitive:
+            # box_1 = box_1.forgetful_project(transitive_ids)
+            # box_2 = box_2.forgetful_project(transitive_ids)
         
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
@@ -173,12 +173,22 @@ class Box():
 
 
     @staticmethod
-    def box_order_score(box_1, box_2, negative, inverse=False):
+    def box_order_score(box_1, box_2, alpha, negative, inverse=False):
         
         if inverse:
-            order_loss = th.linalg.norm(th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
+            
+            distance = box_1.lower - box_2.center
+            order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
+            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
+
+            order_loss = alpha * extra_distance + order_loss
+            
         else:
-            order_loss = th.linalg.norm(th.relu(box_2.center - box_1.upper), dim=-1, ord=1)
+            distance = box_2.center - box_1.upper
+            order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
+            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
+            order_loss = alpha * extra_distance + order_loss
+            
         if not negative:
             corner_loss = Box.corner_loss(box_1)
         else:
