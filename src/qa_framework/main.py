@@ -75,7 +75,7 @@ def parse_args(args=None):
     parser.add_argument('-b', '--batch_size', default=1024, type=int, help="batch size of queries")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
-    parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
+    parser.add_argument('-cpu', '--cpu_num', default=10, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
     parser.add_argument('--max_steps', default=200001, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
@@ -195,8 +195,12 @@ def load_data(args, tasks):
 
     valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
     test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
-    valid_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-valid-queries.pkl"), 'rb'))
-    test_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-test-queries.pkl"), 'rb'))
+    if args.do_test_tr:
+        valid_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-valid-queries.pkl"), 'rb'))
+        test_tr_queries = pickle.load(open(os.path.join(args.data_path, "transitive-test-queries.pkl"), 'rb'))
+    else:
+        valid_tr_queries = None
+        test_tr_queries = None
         
     train_answers = pickle.load(open(os.path.join(args.data_path, "train-answers.pkl"), 'rb'))
 
@@ -230,10 +234,12 @@ def load_data(args, tasks):
                 del valid_queries[query_structure]
             if query_structure in test_queries:
                 del test_queries[query_structure]
-            if query_structure in valid_tr_queries:
-                del valid_tr_queries[query_structure]
-            if query_structure in test_tr_queries:
-                del test_tr_queries[query_structure]
+
+            if args.do_test_tr:
+                if query_structure in valid_tr_queries:
+                    del valid_tr_queries[query_structure]
+                if query_structure in test_tr_queries:
+                    del test_tr_queries[query_structure]
 
     dataset_name = args.data_path.split('/')[-1]
     transitive_roles = transitive_roles_dict[dataset_name]
@@ -394,19 +400,20 @@ def main(args):
             collate_fn=TestDataset.collate_fn
         )
 
-        for query_structure in test_tr_queries:
-            logging.info(query_name_dict[query_structure]+": "+str(len(test_tr_queries[query_structure])))
-        test_tr_queries = flatten_query(test_tr_queries)
-        test_tr_dataloader = DataLoader(
-            TestDataset(
-                test_tr_queries, 
-                args.nentity, 
-                args.nrelation, 
-            ), 
-            batch_size=args.test_batch_size,
-            num_workers=args.cpu_num, 
-            collate_fn=TestDataset.collate_fn
-        )
+        if args.do_test_tr:
+            for query_structure in test_tr_queries:
+                logging.info(query_name_dict[query_structure]+": "+str(len(test_tr_queries[query_structure])))
+            test_tr_queries = flatten_query(test_tr_queries)
+            test_tr_dataloader = DataLoader(
+                TestDataset(
+                    test_tr_queries, 
+                    args.nentity, 
+                    args.nrelation, 
+                ), 
+                batch_size=args.test_batch_size,
+                num_workers=args.cpu_num, 
+                collate_fn=TestDataset.collate_fn
+            )
 
     model = KGReasoning(
         nentity=nentity,
@@ -521,8 +528,9 @@ def main(args):
                 if args.do_test:
                     logging.info('Evaluating on Test Dataset...')
                     test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
-                    logging.info('Evaluation on Transitive Test Dataset:')
-                    test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
+                    if args.do_test_tr:
+                        logging.info('Evaluation on Transitive Test Dataset:')
+                        test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
             if step % args.log_steps == 0:
                 metrics = {}
                 for metric in training_logs[0].keys():
@@ -546,8 +554,9 @@ def main(args):
     if args.do_test:
         logging.info('Evaluating on Test Dataset...')
         test_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_dataloader, query_name_dict, 'Test', step, writer, wandb_logger)
-        logging.info('Evaluation on Transitive Test Dataset:')
-        test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
+        if args.do_test_tr:
+            logging.info('Evaluation on Transitive Test Dataset:')
+            test_tr_all_metrics = evaluate(model, test_easy_answers, test_hard_answers, args, test_tr_dataloader, query_name_dict, 'TestTr', step, writer, wandb_logger)
 
     logging.info("Training finished!!")
 

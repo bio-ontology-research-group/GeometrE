@@ -50,10 +50,14 @@ def flatten_query(queries):
 
 transitive_roles_dict = {"WN18RR-QA": ["+_hypernym", "+_has_part", "-_hypernym", "-_has_part"],
                          "NELL-betae": [],
-                    # "fb15k237":["http://www.w3.org/medicine/symptom/symptom_of", "http://www.w3.org/location/location/contains"],
+                         "FB15k-betae": [],
+                      "FB15k-237-betae": [],
+                         # "fb15k237":["http://www.w3.org/medicine/symptom/symptom_of", "http://www.w3.org/location/location/contains"],
                     # "yago310": ["isLocatedIn"]
                     }
 
 inverse_roles_dict = {"WN18RR-QA": ["-_hypernym", "-_has_part"],
                       "NELL-betae": [],
+                      "FB15k-betae": [],
+                      "FB15k-237-betae": [],
                  }
