@@ -9,6 +9,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import collections
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
 from tqdm import tqdm
 import embeddings as E
 from box import Box
@@ -73,7 +77,55 @@ class KGReasoning(nn.Module):
         )
         return embedding
         
+    def plot_chains(self, args):
+        transitive_ids = self.transitive_ids.cpu().numpy().tolist()
         
+        for id in transitive_ids:
+            embeddings = self.answer_embedding.weight[:, id].detach().cpu()
+            
+            filename = os.path.join(args.data_path, f"chains_{id}.txt")
+            with open(filename) as f:
+                chains = f.readlines()
+                chains = [c.split(",") for c in chains]
+                chains = [c for c in chains if len(c)==3][:10]
+                
+            fig, ax = plt.subplots()
+            for i, chain in enumerate(chains):
+                
+                elements = [int(e) for e in chain]
+                y_pos = i*10 +1
+                y = [y_pos]*len(elements)
+                elements_embed = embeddings[elements]
+                ax.scatter(elements_embed, y, zorder=2)
+                for xi, yi, label in zip(elements_embed, y, elements):
+                    ax.text(xi, yi + 0.05, str(label), ha='center', va='bottom', fontsize=4, zorder=4)
+                
+                for j in range(1, len(elements)):
+                    x0 = embeddings[elements[j-1]].item()
+                    x1 = embeddings[elements[j]].item()
+                    arrow = FancyArrowPatch(
+                        (x0, y_pos), (x1, y_pos),
+                        connectionstyle="arc3,rad=0.1",  # positive for upward curve, negative for downward
+                        arrowstyle='-|>,head_length=2,head_width=1',
+
+                        # arrowstyle='->',
+                        color='blue',
+                        linewidth=0.5,
+                        zorder=3
+                    
+                    )
+                    ax.add_patch(arrow)                     
+
+                # for j in range(1, len(elements)):
+                    # x0 = embeddings[elements[j-1]]
+                    # x1 = embeddings[elements[j]]
+                    # ax.annotate('', xy=(x1, i+1), xytext=(x0, i+1), arrowprops=dict(arrowstyle='->', color='blue'))
+
+            outfilename = os.path.join(args.save_path, f"chains_plot_{id}.png")
+            plt.savefig(outfilename, dpi=300)
+            plt.close()
+
+    
     def forward(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
         return self.forward_box(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=transitive)
 
@@ -175,9 +227,7 @@ class KGReasoning(nn.Module):
     def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
         if transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
-            mask = ~ torch.isin(self.transitive_ids, self.inverse_ids)
-            transitive_only = self.transitive_ids[mask]
-            logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative, transitive=transitive, transitive_ids=transitive_only)
+            logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative, transitive=transitive)
         else:
             logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
         
@@ -367,20 +417,36 @@ class KGReasoning(nn.Module):
                                                                                                       1)
                                                    ) # achieve the ranking of all entities
                 for idx, (i, query, query_structure) in enumerate(zip(argsort[:, 0], queries_unflatten, query_structures)):
-                    hard_answer = hard_answers[query]
-                    easy_answer = easy_answers[query]
-                    num_hard = len(hard_answer)
-                    num_easy = len(easy_answer)
-                    assert len(hard_answer.intersection(easy_answer)) == 0
-                    cur_ranking = ranking[idx, list(easy_answer) + list(hard_answer)]
-                    cur_ranking, indices = torch.sort(cur_ranking)
-                    masks = indices >= num_easy
-                    if args.cuda:
-                        answer_list = torch.arange(num_hard + num_easy).to(torch.float).cuda()
+
+                    if args.do_test_full_tr:
+                        hard_answer = hard_answers[query]
+                        num_hard = len(hard_answer)
+                        cur_ranking = ranking[idx, list(hard_answer)]
+                        cur_ranking, indices = torch.sort(cur_ranking)
+
+                        if args.cuda:
+                            answer_list = torch.arange(num_hard).to(torch.float).cuda()
+                        else:
+                            answer_list = torch.arange(num_hard).to(torch.float)
+                        cur_ranking = cur_ranking - answer_list + 1
+                        
                     else:
-                        answer_list = torch.arange(num_hard + num_easy).to(torch.float)
-                    cur_ranking = cur_ranking - answer_list + 1 # filtered setting
-                    cur_ranking = cur_ranking[masks] # only take indices that belong to the hard answers
+                        hard_answer = hard_answers[query]
+                        easy_answer = easy_answers[query]
+                        num_hard = len(hard_answer)
+                        num_easy = len(easy_answer)
+
+                        assert len(hard_answer.intersection(easy_answer)) == 0
+
+                        cur_ranking = ranking[idx, list(easy_answer) + list(hard_answer)]
+                        cur_ranking, indices = torch.sort(cur_ranking)
+                        masks = indices >= num_easy
+                        if args.cuda:
+                            answer_list = torch.arange(num_hard + num_easy).to(torch.float).cuda()
+                        else:
+                            answer_list = torch.arange(num_hard + num_easy).to(torch.float)
+                        cur_ranking = cur_ranking - answer_list + 1 # filtered setting
+                        cur_ranking = cur_ranking[masks] # only take indices that belong to the hard answers
 
                     mrr = torch.mean(1./cur_ranking).item()
                     h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()

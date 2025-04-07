@@ -22,9 +22,7 @@ def get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add,
 
     transitive_mask = th.isin(index_tensor, transitive_ids)
     projection_dims = index_tensor[transitive_mask]
-    projection_inverses = th.isin(projection_dims, inverse_ids)
-    projection_dims[projection_inverses] = projection_dims[projection_inverses] - 1
-
+    
     inverse_mask = th.isin(index_tensor, inverse_ids)
     trans_inv = transitive_mask & inverse_mask
     trans_not_inv = transitive_mask & ~inverse_mask
@@ -35,7 +33,7 @@ def get_role_data(role_data, transitive_ids, inverse_ids, transitive, inter_add,
     off_add = transf_off_add(index_tensor)
 
     if transitive:
-        bs_ids = th.nonzero(transitive_mask)
+        bs_ids = th.nonzero(transitive_mask).squeeze()
         cen_mul[bs_ids, projection_dims] = id_mul.float()
         cen_add[bs_ids, projection_dims] = id_add.float()
         off_mul[bs_ids, projection_dims] = id_mul.float()

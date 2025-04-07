@@ -144,7 +144,7 @@ class Box():
 
         if len(projection_dims) > 0:
             trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), alpha, negative)
-            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), alpha, negative, inverse=True)
+            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), alpha, negative) #, inverse=True
 
             order_loss[not_trans_or_inv] = 0
             order_loss[trans_not_inv] = trans_loss
