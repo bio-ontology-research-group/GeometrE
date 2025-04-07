@@ -417,36 +417,23 @@ class KGReasoning(nn.Module):
                                                                                                       1)
                                                    ) # achieve the ranking of all entities
                 for idx, (i, query, query_structure) in enumerate(zip(argsort[:, 0], queries_unflatten, query_structures)):
+ 
+                    hard_answer = hard_answers[query]
+                    easy_answer = easy_answers[query]
+                    num_hard = len(hard_answer)
+                    num_easy = len(easy_answer)
 
-                    if args.do_test_full_tr:
-                        hard_answer = hard_answers[query]
-                        num_hard = len(hard_answer)
-                        cur_ranking = ranking[idx, list(hard_answer)]
-                        cur_ranking, indices = torch.sort(cur_ranking)
+                    assert len(hard_answer.intersection(easy_answer)) == 0
 
-                        if args.cuda:
-                            answer_list = torch.arange(num_hard).to(torch.float).cuda()
-                        else:
-                            answer_list = torch.arange(num_hard).to(torch.float)
-                        cur_ranking = cur_ranking - answer_list + 1
-                        
+                    cur_ranking = ranking[idx, list(easy_answer) + list(hard_answer)]
+                    cur_ranking, indices = torch.sort(cur_ranking)
+                    masks = indices >= num_easy
+                    if args.cuda:
+                        answer_list = torch.arange(num_hard + num_easy).to(torch.float).cuda()
                     else:
-                        hard_answer = hard_answers[query]
-                        easy_answer = easy_answers[query]
-                        num_hard = len(hard_answer)
-                        num_easy = len(easy_answer)
-
-                        assert len(hard_answer.intersection(easy_answer)) == 0
-
-                        cur_ranking = ranking[idx, list(easy_answer) + list(hard_answer)]
-                        cur_ranking, indices = torch.sort(cur_ranking)
-                        masks = indices >= num_easy
-                        if args.cuda:
-                            answer_list = torch.arange(num_hard + num_easy).to(torch.float).cuda()
-                        else:
-                            answer_list = torch.arange(num_hard + num_easy).to(torch.float)
-                        cur_ranking = cur_ranking - answer_list + 1 # filtered setting
-                        cur_ranking = cur_ranking[masks] # only take indices that belong to the hard answers
+                        answer_list = torch.arange(num_hard + num_easy).to(torch.float)
+                    cur_ranking = cur_ranking - answer_list + 1 # filtered setting
+                    cur_ranking = cur_ranking[masks] # only take indices that belong to the hard answers
 
                     mrr = torch.mean(1./cur_ranking).item()
                     h1 = torch.mean((cur_ranking <= 1).to(torch.float)).item()
