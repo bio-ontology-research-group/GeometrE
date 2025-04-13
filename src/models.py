@@ -23,7 +23,7 @@ def Identity(x):
 class KGReasoning(nn.Module):
     def __init__(self, nentity, nrelation, hidden_dim, gamma, alpha,
                  geo, test_batch_size=1, box_mode=None,
-                 use_cuda=False, query_name_dict=None, beta_mode=None, transitive_ids=None, inverse_ids=None, with_inter_translation=False, with_answer_embedding=False):
+                 use_cuda=False, query_name_dict=None, beta_mode=None, transitive_ids=None, inverse_ids=None, with_answer_embedding=False):
         super(KGReasoning, self).__init__()
         self.nentity = nentity
         self.nrelation = nrelation
@@ -72,11 +72,6 @@ class KGReasoning(nn.Module):
         self.offset_mul = self.init_embedding(nrelation, self.relation_dim)
         self.offset_add = self.init_embedding(nrelation, self.relation_dim)
 
-        if with_inter_translation:
-            self.inter_add = self.init_embedding(nrelation, self.relation_dim)
-        else:
-            self.inter_add = None
-            
     def init_embedding(self, num_embeddings, dimension):
         embedding = nn.Embedding(num_embeddings, dimension)
         nn.init.uniform_(
@@ -155,31 +150,31 @@ class KGReasoning(nn.Module):
         return E.embedding_3p(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2i(self, data, transitive):
-        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_2i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_3i(self, data, transitive):
-        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_3i(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_2in(self, data, transitive):
-        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_2in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
     
     def embedding_3in(self, data, transitive):
-        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_3in(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_pi(self, data, transitive):
-        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_pi(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_ip(self, data, transitive):
-        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_ip(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_inp(self, data, transitive):
-        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_inp(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
          
     def embedding_pin(self, data, transitive):
-        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_pin(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
 
     def embedding_pni(self, data, transitive):
-        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive, self.inter_add)
+        return E.embedding_pni(data, self.get_box_data(), self.get_role_data(), self.transitive_ids, self.inverse_ids, transitive)
     
     def get_embedding_fn(self, task_name):
         """

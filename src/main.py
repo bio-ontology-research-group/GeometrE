@@ -66,7 +66,6 @@ def parse_args(args=None):
     parser.add_argument('--plot_embeddings', action='store_true', help="plot embeddings")
     parser.add_argument('--deductive_negative_sampling', action='store_true', help="include transitive triples on negative sampling filtering")
     parser.add_argument('--filter_deductive_triples', action='store_true', help="evaluate filtering on transitive triples" )
-    parser.add_argument('--with_inter_translation', action='store_true', help="apply extra translation before intersection")
     parser.add_argument('--with_answer_embedding', action='store_true', help="use answer embeddings. Otherwise use box embeddings as answer")
     #######################
     
@@ -437,7 +436,6 @@ def main(args):
         query_name_dict=query_name_dict,
         transitive_ids=transitive_ids,
         inverse_ids=inverse_ids,
-        with_inter_translation=args.with_inter_translation,
         with_answer_embedding = args.with_answer_embedding
     )
 

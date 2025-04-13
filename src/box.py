@@ -84,17 +84,7 @@ class Box():
         
         return self, non_projected_box
 
-    
     def transform(self, cen_mul, cen_add, off_mul, off_add, make_abs=True):
-        if cen_mul is None:
-            cen_mul = 1
-        if cen_add is None:
-            cen_add = 0
-        if off_mul is None:
-            off_mul = 1
-        if off_add is None:
-            off_add = 0
-            
         new_center = self.center * cen_mul + cen_add
         new_offset = self.offset * off_mul + off_add
         if make_abs:
