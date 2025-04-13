@@ -135,7 +135,7 @@ def embedding_ip(data, box_data, role_data, transitive_ids, inverse_ids, transit
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
     transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
     
-    transf_data_3, _, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 4])
+    transf_data_3, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 4])
                 
     box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
     box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
