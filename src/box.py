@@ -206,7 +206,7 @@ class Box():
     @staticmethod
     def corner_loss(box):
         loss = th.linalg.norm(th.relu(box.lower - box.upper), dim=-1, ord=1)
-        return loss
+        return loss*0
 
     @staticmethod
     def _get_lower_and_upper_corners(box1, box2):
