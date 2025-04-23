@@ -95,23 +95,7 @@ class Box():
             new_offset = th.abs(new_offset)
         return Box(new_center, new_offset)
 
-    @staticmethod
-    def box_composed_score(box_1, box_2, alpha, trans_inv, trans_not_inv, negative=False):
-        shape_1 = box_1.center.shape[:-1]
-        shape_2 = box_2.center.shape[:-1]
-        shape = tuple([max(s1, s2) for s1, s2 in zip(shape_1, shape_2)])
-        
-        not_trans_or_inv = ~(trans_inv | trans_not_inv)
-        loss = -1 * th.ones(shape, device=box_1.center.device)
 
-        normal_loss = Box.box_inclusion_score(box_1.mask(not_trans_or_inv), box_2.mask(not_trans_or_inv), alpha, negative)
-        trans_loss = Box.box_order_score(box_1.mask(trans_not_inv), box_2.mask(trans_not_inv), negative)
-        inv_loss = Box.box_order_score(box_1.mask(trans_inv), box_2.mask(trans_inv), negative, inverse=True)
-        loss[not_trans_or_inv] = normal_loss
-        loss[trans_not_inv] = trans_loss
-        loss[trans_inv] = inv_loss
-
-        return loss
     
     @staticmethod
     def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False, transitive=False, transitive_ids=None):
