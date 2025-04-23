@@ -85,6 +85,10 @@ class Box():
         return self, non_projected_box
 
     def transform(self, cen_mul, cen_add, off_mul, off_add, make_abs=True):
+        # cen_mul = 1 # ABLATION
+        # off_mul = 1 # ABLATION
+        # cen_add = 0 # ABLATION
+        # off_add = 0 # ABLATION
         new_center = self.center * cen_mul + cen_add
         new_offset = self.offset * off_mul + off_add
         if make_abs:
@@ -149,7 +153,7 @@ class Box():
             order_loss[trans_not_inv] = trans_loss
             order_loss[trans_inv] = inv_loss
 
-        weight = 1/hid_dim
+        weight = 1#/hid_dim
         return weight*order_loss + inclusion_loss
 
     @staticmethod
@@ -206,7 +210,7 @@ class Box():
     @staticmethod
     def corner_loss(box):
         loss = th.linalg.norm(th.relu(box.lower - box.upper), dim=-1, ord=1)
-        return loss*0
+        return loss #*0 ABLATION
 
     @staticmethod
     def _get_lower_and_upper_corners(box1, box2):
