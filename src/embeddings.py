@@ -19,12 +19,14 @@ def get_box_data(box_data, index_tensor):
 
 def get_role_data(role_data, transitive_ids, inverse_ids, transitive, index_tensor):
     transitive_id_to_dimension = {t_id.item(): i for i, t_id in enumerate(transitive_ids)}
+
     transf_cen_mul, transf_cen_add, transf_off_mul, transf_off_add = role_data
 
     transitive_mask = th.isin(index_tensor, transitive_ids)
     projection_dims = index_tensor[transitive_mask]
-    projection_dims = th.tensor([transitive_id_to_dimension[t_id.item()] for t_id in projection_dims], device=index_tensor.device)
-    
+
+    projection_dims = th.tensor([transitive_id_to_dimension[t_id.item()] for t_id in projection_dims], device=index_tensor.device).long()
+
     inverse_mask = th.isin(index_tensor, inverse_ids)
     trans_inv = transitive_mask & inverse_mask
     trans_not_inv = transitive_mask & ~inverse_mask
@@ -34,13 +36,13 @@ def get_role_data(role_data, transitive_ids, inverse_ids, transitive, index_tens
     off_mul = transf_off_mul(index_tensor)
     off_add = transf_off_add(index_tensor)
 
-    # if transitive:
-        # bs_ids = th.nonzero(transitive_mask).squeeze()
-        # cen_mul[bs_ids, projection_dims] = id_mul.float()
-        # cen_add[bs_ids, projection_dims] = id_add.float()
-        # off_mul[bs_ids, projection_dims] = id_mul.float()
-        # off_add[bs_ids, projection_dims] = id_add.float()
-
+    if transitive:
+        bs_ids = th.nonzero(transitive_mask).squeeze()
+        cen_mul[bs_ids, projection_dims] = id_mul.float()
+        cen_add[bs_ids, projection_dims] = id_add.float()
+        off_mul[bs_ids, projection_dims] = id_mul.float()
+        off_add[bs_ids, projection_dims] = id_add.float()
+                                
     return (cen_mul, cen_add, off_mul, off_add), (trans_inv, trans_not_inv, projection_dims)
 
 def embedding_1p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
