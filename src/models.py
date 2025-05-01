@@ -12,10 +12,13 @@ import collections
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch
+from matplotlib.patches import FancyArrowPatch, FancyArrow
 from tqdm import tqdm
 import embeddings as E
 from box import Box
+from util import transitive_roles_dict
+from scipy.stats import spearmanr
+import numpy as np
 
 def Identity(x):
     return x
@@ -80,9 +83,111 @@ class KGReasoning(nn.Module):
             b=self.embedding_range.item()
         )
         return embedding
+
+    def compute_spearman_and_violations(self, args):
+        transitive_roles = transitive_roles_dict["WN18RR-QA"]
+        transitive_ids = [0,1,2,3] #self.transitive_ids.cpu().numpy().tolist()
+
+        spearman_scores = {i: list() for i in transitive_ids}
+        violation_counts = {i: list() for i in transitive_ids}
         
+        for id in transitive_ids:
+            embeddings = self.answer_embedding.weight[:, id].detach().cpu()
+            filename = os.path.join(args.data_path, f"chains_{id}.txt")
+            with open(filename) as f:
+                chains = f.readlines()
+                chains = sorted([c.split(",") for c in chains], key=lambda x: (len(x), x))
+                chains = [c for c in chains if len(c)>2]
+
+            for seq in chains:
+                values = [embeddings[int(e)] for e in seq]
+                positions = list(range(len(seq)))
+
+                # Spearman's rho
+                rho, _ = spearmanr(positions, values)
+                spearman_scores[id].append(rho)
+
+                # Count order violations (for increasing order)
+                violations = sum(1 for i in range(len(values)-1) if values[i] > values[i+1])
+                violation_counts[id].append(violations)
+
+            
+        # Summary
+        avg_spearman = {id: np.mean(scores) for id, scores in spearman_scores.items()}
+        avg_violations = {id: np.mean(violations) for id, violations in violation_counts.items()}
+        return avg_spearman, avg_violations
+        # print("Spearman's rho and violations:")
+        # for id in transitive_ids:
+            # print(f"ID {id}:")
+            # print(f"  Average Spearman's rho: {avg_spearman[id]:.2f}")
+            # print(f"  Average violations: {avg_violations[id]:.2f}")
+            
+                        
+    def plot_chain_arrows(self, args):
+        spearman_scores, violation_counts = self.compute_spearman_and_violations(args)
+        print(spearman_scores)
+        print(violation_counts)
+        transitive_roles = transitive_roles_dict["WN18RR-QA"]
+        transitive_ids = [0,1,2,3] #self.transitive_ids.cpu().numpy().tolist()
+
+        for id in transitive_ids:
+            if spearman_scores[id] < 0:
+                right_color = 'red'
+                left_color = 'green'
+            else:
+                right_color = 'green'
+                left_color = 'red'
+            embeddings = self.answer_embedding.weight[:, id].detach().cpu()
+            filename = os.path.join(args.data_path, f"chains_{id}.txt")
+            with open(filename) as f:
+                chains = f.readlines()
+                chains = sorted([c.split(",") for c in chains], key=lambda x: (len(x), x))
+                chains = [c for c in chains if len(c)>2]
+            max_length = max(len(seq) for seq in chains)
+                
+            fig, ax = plt.subplots(figsize=(12, 10))
+            for idx, seq in enumerate(chains):
+                values = [embeddings[int(e)] for e in seq]
+                y_gap = 1  # Vertical space between sequences
+                y = idx * y_gap  # Sequence row
+
+                for i in range(len(values) - 1):
+                    x_start = i
+                    x_end = i + 1
+
+                    if values[i] <= values[i + 1]:
+                        color = right_color  # Order preserved
+                        direction = 0.8
+                    else:
+                        color = left_color  # Order violated
+                        direction = -0.8
+
+                    # Draw arrow
+                    ax.add_patch(FancyArrow(x_start, y, 0.9, 0, width=0.05, color=color))
+
+                # Optional: Label sequences
+                # ax.text(-1, y, f"Seq {idx+1}", va='center', ha='right', fontsize=8)
+
+            # Formatting
+            ax.set_ylim(-1, len(chains) * y_gap)
+            ax.set_xlim(-2, max_length + 1)
+            ax.set_yticks([])
+            ax.set_yticklabels([])
+            ax.set_xticks(range(max_length))
+            ax.set_xlabel("Position in Sequence")
+            ax.set_title("Order Preservation Visualization (Green: Preserved, Red: Violated)")
+
+            plt.tight_layout()
+            outfilename = os.path.join(args.save_path, f"chains_arrows_plot_{id}.png")
+            plt.savefig(outfilename, dpi=300)
+            plt.close()
+ 
+
     def plot_chains(self, args):
-        transitive_ids = self.transitive_ids.cpu().numpy().tolist()
+        transitive_roles = transitive_roles_dict["WN18RR-QA"]
+
+        
+        transitive_ids = [0,1,2,3] #self.transitive_ids.cpu().numpy().tolist()
         
         for id in transitive_ids:
             embeddings = self.answer_embedding.weight[:, id].detach().cpu()
@@ -90,10 +195,28 @@ class KGReasoning(nn.Module):
             filename = os.path.join(args.data_path, f"chains_{id}.txt")
             with open(filename) as f:
                 chains = f.readlines()
-                chains = [c.split(",") for c in chains]
-                chains = [c for c in chains if len(c)==3][:10]
-                
+                chains = sorted([c.split(",") for c in chains], key=lambda x: (len(x), x))
+                # chains = [c for c in chains if len(c)<=10][-10:]
+            
+            good_indices = list()
+            good_chains = list()
+
+            for i, c in enumerate(chains):
+                if len(chains) < 3:
+                    continue
+                elements = [int(e) for e in c]
+                elements_embed = embeddings[elements].cpu().numpy().tolist()
+                sorted_embeds = sorted(elements_embed)
+                if elements_embed == sorted_embeds:
+                    good_indices.append(i)
+                    good_chains.append(c)
+
+            print(len(good_indices)/len(chains))
+            print(good_indices[-10:])
+            chains = good_chains[-10:]
+                    
             fig, ax = plt.subplots()
+            
             for i, chain in enumerate(chains):
                 
                 elements = [int(e) for e in chain]
@@ -101,9 +224,15 @@ class KGReasoning(nn.Module):
                 y = [y_pos]*len(elements)
                 elements_embed = embeddings[elements]
                 ax.scatter(elements_embed, y, zorder=2)
+                k=0
                 for xi, yi, label in zip(elements_embed, y, elements):
-                    ax.text(xi, yi + 0.05, str(label), ha='center', va='bottom', fontsize=4, zorder=4)
-                
+                    if k % 2 == 0:
+                        position_y = "top"
+                    else:
+                        position_y = "bottom"
+                    k += 1
+                    ax.text(xi, yi + 0.05, str(label), ha='center', va=position_y, fontsize=8, zorder=4)
+
                 for j in range(1, len(elements)):
                     x0 = embeddings[elements[j-1]].item()
                     x1 = embeddings[elements[j]].item()
@@ -120,11 +249,10 @@ class KGReasoning(nn.Module):
                     )
                     ax.add_patch(arrow)                     
 
-                # for j in range(1, len(elements)):
-                    # x0 = embeddings[elements[j-1]]
-                    # x1 = embeddings[elements[j]]
-                    # ax.annotate('', xy=(x1, i+1), xytext=(x0, i+1), arrowprops=dict(arrowstyle='->', color='blue'))
-
+            ax.set_yticks([])
+            ax.set_yticklabels([])
+            plt.title(f"{transitive_roles[id]}")
+                    
             outfilename = os.path.join(args.save_path, f"chains_plot_{id}.png")
             plt.savefig(outfilename, dpi=300)
             plt.close()
@@ -227,7 +355,35 @@ class KGReasoning(nn.Module):
 
     def cal_membership_logit(self, entity_embedding, box_embedding):
         return Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha)
-        
+
+    def cal_transitive_relation_logit(self, transitive_ids):
+        cen_mul = self.center_mul(transitive_ids)
+        cen_add = self.center_add(transitive_ids)
+        off_mul = self.offset_mul(transitive_ids)
+        off_add = self.offset_add(transitive_ids)
+
+        projection_dims = torch.arange(len(transitive_ids))
+        n, dim = cen_mul.shape
+        mask = torch.ones((n, dim), dtype=torch.bool)
+        mask[torch.arange(n), projection_dims] = False
+
+        cen_mul_non_trans = cen_mul[mask].reshape(n, dim - 1)
+        cen_mul_trans = cen_mul[torch.arange(n), projection_dims]
+        cen_add_non_trans = cen_add[mask].reshape(n, dim - 1)
+        cen_add_trans = cen_add[torch.arange(n), projection_dims]
+        off_mul_non_trans = off_mul[mask].reshape(n, dim - 1)
+        off_mul_trans = off_mul[torch.arange(n), projection_dims]
+        off_add_non_trans = off_add[mask].reshape(n, dim - 1)
+        off_add_trans = off_add[torch.arange(n), projection_dims]
+
+        cen_mul_loss = torch.linalg.norm(cen_mul_non_trans - 1, ord=1) + torch.linalg.norm(cen_mul_trans-1, dim=-1, ord=1)
+        cen_add_loss = torch.linalg.norm(cen_add_non_trans, ord=1)
+        off_mul_loss = torch.linalg.norm(off_mul_non_trans - 1, ord=1) + torch.linalg.norm(off_mul_trans-1, dim=-1, ord=1)
+        off_add_loss = torch.linalg.norm(off_add_non_trans, ord=1)
+
+        loss = cen_mul_loss + cen_add_loss + off_mul_loss + off_add_loss
+        return loss
+
     def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
         if transitive:
             # logit = Box.box_composed_score(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, negative=negative)
@@ -340,8 +496,9 @@ class KGReasoning(nn.Module):
         else:
             all_answer_boxes = Box(self.center_embedding.weight, as_point=True)
         membership_logit = self.cal_membership_logit(all_answer_boxes, all_query_boxes)
+        transitive_relation_logit = self.cal_transitive_relation_logit(self.transitive_ids)
         
-        return positive_logit, negative_logit, membership_logit, subsampling_weight, all_idxs+all_union_idxs
+        return positive_logit, negative_logit, membership_logit, transitive_relation_logit, subsampling_weight, all_idxs+all_union_idxs
     
     @staticmethod
     def train_step(model, optimizer, train_iterator, args, step):
@@ -364,7 +521,7 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        positive_logit, negative_logit, membership_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+        positive_logit, negative_logit, membership_logit, transitive_relation_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
 
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
         positive_score = F.logsigmoid(positive_logit).squeeze(dim=1)
@@ -373,12 +530,15 @@ class KGReasoning(nn.Module):
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
 
+        # membership_loss = 0.1 * membership_logit.mean()
         membership_loss = -F.logsigmoid(membership_logit).mean()
+        relation_loss = -F.logsigmoid(transitive_relation_logit).mean()
+        # relation_loss = transitive_relation_logit.mean()
 
         # lambda_reg = 0.1
         # reg = lambda_reg * (((model.center_mul.weight - 1.0) ** 2).mean() + ((model.center_add.weight) ** 2).mean() + ((model.offset_mul.weight - 1.0) ** 2).mean() + ((model.offset_add.weight) ** 2).mean())
         
-        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss
+        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss  + relation_loss
         loss.backward()
         optimizer.step()
         
@@ -387,6 +547,7 @@ class KGReasoning(nn.Module):
             'positive_sample_loss': positive_sample_loss.item(),
             'negative_sample_loss': negative_sample_loss.item(),
             'membership_loss': membership_loss.item(),
+            'transitive_rel_loss': relation_loss.item(),
             'loss': loss.item()
         }
         
@@ -415,7 +576,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+                _, negative_logit,_, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)
