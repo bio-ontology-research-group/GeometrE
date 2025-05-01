@@ -91,7 +91,29 @@ class Box():
             new_offset = th.abs(new_offset)
         return Box(new_center, new_offset)
 
+    @staticmethod
+    def box_composed_score(box_1, box_2, alpha, trans_inv, trans_not_inv, negative=False):
+        shape_1 = box_1.center.shape[:-1]
+        shape_2 = box_2.center.shape[:-1]
+        shape = tuple([max(s1, s2) for s1, s2 in zip(shape_1, shape_2)])
 
+        trans_or_inv = (trans_inv | trans_not_inv)
+         
+        not_trans_or_inv = ~(trans_or_inv)
+        loss = -1 * th.ones(shape, device=box_1.center.device)
+ 
+        normal_loss = Box.box_inclusion_score(box_1.mask(not_trans_or_inv), box_2.mask(not_trans_or_inv), alpha, negative)
+        trans_loss = Box.box_order_score(box_1.mask(trans_or_inv), box_2.mask(trans_or_inv), alpha, negative)
+        # trans_loss = Box.box_order_score(box_1.mask(trans_not_inv), box_2.mask(trans_not_inv), alpha, negative)
+        # inv_loss = Box.box_order_score(box_1.mask(trans_inv), box_2.mask(trans_inv), alpha, negative, inverse=True)
+
+        
+        loss[not_trans_or_inv] = normal_loss
+        loss[trans_or_inv] = trans_loss
+        # loss[trans_not_inv] = trans_loss
+        # loss[trans_inv] = inv_loss
+ 
+        return loss
     
     @staticmethod
     def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False, transitive=False, transitive_ids=None):
@@ -165,22 +187,23 @@ class Box():
 
     @staticmethod
     def box_order_score(box_1, box_2, alpha, negative, inverse=False):
-        
+        gamma = 0.1
         if inverse:
-            
-            distance = box_1.lower - box_2.center
+            distance = box_1.lower - box_2.center + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
-            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
-
-            order_loss = alpha * extra_distance + order_loss
+            # extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
+            # order_loss = alpha * extra_distance + order_loss
             
         else:
-            distance = box_2.center - box_1.upper
+            distance = box_2.center - box_1.upper + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
-            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
-            order_loss = alpha * extra_distance + order_loss
+            # extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
+            # order_loss = alpha * extra_distance + order_loss
             
         if not negative:
+            # extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
+            # order_loss = alpha * extra_distance + order_loss
+            
             corner_loss = Box.corner_loss(box_1)
         else:
             corner_loss = th.zeros_like(order_loss)
