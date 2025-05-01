@@ -18,15 +18,18 @@ def get_box_data(box_data, index_tensor):
     return center, offset
 
 def get_role_data(role_data, transitive_ids, inverse_ids, transitive, index_tensor):
-    transitive_id_to_dimension = {t_id.item(): i for i, t_id in enumerate(transitive_ids)}
+    # transitive_id_to_dimension = {t_id.item(): i for i, t_id in enumerate(transitive_ids)}
 
     transf_cen_mul, transf_cen_add, transf_off_mul, transf_off_add = role_data
 
     transitive_mask = th.isin(index_tensor, transitive_ids)
     projection_dims = index_tensor[transitive_mask]
-
-    projection_dims = th.tensor([transitive_id_to_dimension[t_id.item()] for t_id in projection_dims], device=index_tensor.device).long()
-
+    # inverse_ids_mask = th.isin(projection_dims, inverse_ids)
+    # projection_dims[inverse_ids_mask] = projection_dims[inverse_ids_mask] - 1
+    
+    # projection_dims = th.tensor([transitive_id_to_dimension[t_id.item()] for t_id in projection_dims], device=index_tensor.device).long()
+    
+    
     inverse_mask = th.isin(index_tensor, inverse_ids)
     trans_inv = transitive_mask & inverse_mask
     trans_not_inv = transitive_mask & ~inverse_mask
