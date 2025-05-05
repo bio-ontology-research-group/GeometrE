@@ -82,7 +82,7 @@ def parse_args(args=None):
     parser.add_argument('-b', '--batch_size', default=1024, type=int, help="batch size of queries")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
-    parser.add_argument('-cpu', '--cpu_num', default=3, type=int, help="used to speed up torch.dataloader")
+    parser.add_argument('-cpu', '--cpu_num', default=10, type=int, help="used to speed up torch.dataloader")
     parser.add_argument('-save', '--save_path', default=None, type=str, help="no need to set manually, will configure automatically")
     parser.add_argument('--max_steps', default=200001, type=int, help="maximum iterations to train")
     parser.add_argument('--warm_up_steps', default=None, type=int, help="no need to set manually, will configure automatically")
@@ -478,7 +478,12 @@ def main(args):
 
     if args.plot_embeddings:
         # model.plot_embeddings(args, outfilename=os.path.join(args.save_path, 'embeddings.png'))
-        model.plot_chains(args)
+        model.compute_spearman_and_violations(args)
+        # model.compute_monotonicity_metrics(args)
+        # model.plot_monotonicity_heatmap(args)
+        # model.plot_stacked_progression(args)
+        model.plot_chain_arrows(args)
+        # model.plot_chains(args)
         sys.exit(0)
         
     step = init_step 
