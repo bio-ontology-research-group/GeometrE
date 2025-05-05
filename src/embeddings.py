@@ -108,11 +108,11 @@ def embedding_2in(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r',)), ('e', ('r', 'n'))): '2in',
     # approximated as 1p
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
-    transf_data_1, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
+    transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
-    # false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
-    # transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
+    false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
+    transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
     return box_c_1, *transitive_data
  
 
@@ -179,12 +179,12 @@ def embedding_pin(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # approximated as 2p. 
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
-    transf_data_2, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
+    transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
     
     box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2)
 
-    # false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
-    # transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
+    false_tensor = th.zeros(c_1.shape[0]).bool().to(c_1.device)
+    transitive_data = false_tensor, false_tensor, empty_tensor.to(c_1.device)
     return box_c_1, *transitive_data
 
 
@@ -192,11 +192,11 @@ def embedding_pni(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r', 'r', 'n')), ('e', ('r',)))
     # approximated as 1p. 
     c_2, c_2_offset = get_box_data(box_data, data[:, 4])
-    transf_data_3, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 5])
+    transf_data_3, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 5])
 
     box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_3)
 
-    # false_tensor = th.zeros(c_2.shape[0]).bool().to(c_2.device)
-    # transitive_data = false_tensor, false_tensor, empty_tensor.to(c_2.device)
+    false_tensor = th.zeros(c_2.shape[0]).bool().to(c_2.device)
+    transitive_data = false_tensor, false_tensor, empty_tensor.to(c_2.device)
     return box_c_2, *transitive_data
     
