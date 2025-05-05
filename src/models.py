@@ -967,7 +967,6 @@ class KGReasoning(nn.Module):
 
     def cal_transitive_relation_logit(self, transitive_ids, inverse_ids):
         inverse_mask = torch.isin(transitive_ids, inverse_ids)
-        # transitive_ids[inverse_mask] -= 1
         
         cen_mul = self.center_mul(transitive_ids)
         cen_add = self.center_add(transitive_ids)
