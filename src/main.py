@@ -462,8 +462,12 @@ def main(args):
         logging.info('Warming up for %d steps' % warm_up_steps)
         
     if args.checkpoint_path is not None:
+        if args.cuda:
+            map_location="cuda"
+        else:
+            map_location="cpu"
         logging.info('Loading checkpoint %s...' % args.checkpoint_path)
-        checkpoint = torch.load(os.path.join(args.checkpoint_path, 'checkpoint'))
+        checkpoint = torch.load(os.path.join(args.checkpoint_path, 'checkpoint'), map_location=map_location)
         init_step = checkpoint['step']
         model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -478,7 +482,10 @@ def main(args):
 
     if args.plot_embeddings:
         # model.plot_embeddings(args, outfilename=os.path.join(args.save_path, 'embeddings.png'))
-        model.plot_chains(args)
+        # model.compute_monotonicity_metrics(args)
+        model.compute_spearman_and_violations(args)
+        model.plot_chain_arrows(args)
+        # model.plot_chains(args)
         sys.exit(0)
         
     step = init_step 
