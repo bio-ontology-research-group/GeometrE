@@ -39,26 +39,6 @@ class Box():
         self.center[mask] = box.center
         self.offset[mask] = box.offset
  
-
-        
-    def forgetful_project(self, projection_dims):
-        box_shape = self.center.shape
-        bs = box_shape[0]
-        dim = box_shape[-1]
-
-        self.center = self.center.view(bs, -1, dim)
-        self.offset = self.offset.view(bs, -1, dim)
-
-        mask = th.ones_like(self.center)
-        mask[:, :, projection_dims] = 0
-        
-        self.center = self.center * mask
-        self.offset = self.offset * mask
-        self.center = self.center.view(*box_shape)
-        self.offset = self.offset.view(*box_shape)
-        
-        return self
-
     def project(self, projection_dims):
         box_shape = self.center.shape
         bs = box_shape[0]
@@ -95,8 +75,6 @@ class Box():
             new_offset = th.abs(new_offset)
         return Box(new_center, new_offset)
 
-
-    
     @staticmethod
     def box_composed_score_with_projection(box_1, box_2, alpha, trans_inv, trans_not_inv, projection_dims, negative=False, transitive=False, transitive_ids=None):
         bs, *_ = box_1.center.shape
@@ -131,7 +109,7 @@ class Box():
 
         if len(projection_dims) > 0:
             trans_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_not_inv), single_dim_boxes_2.mask(trans_not_inv), alpha, negative)
-            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), alpha, negative) #, inverse=True
+            inv_loss = Box.box_order_score(single_dim_boxes_1.mask(trans_inv), single_dim_boxes_2.mask(trans_inv), alpha, negative, inverse=True)
 
             order_loss[not_trans_or_inv] = 0
             order_loss[trans_not_inv] = trans_loss
@@ -142,19 +120,6 @@ class Box():
 
     @staticmethod
     def box_inclusion_score(box_1, box_2, alpha, negative=False, transitive=False, transitive_ids=None):
-
-        # if transitive:
-            # box_1 = box_1.forgetful_project(transitive_ids)
-            # box_2 = box_2.forgetful_project(transitive_ids)
-
-
-        # delta = (box_2.center - box_1.center).abs()
-        # distance_out = th.relu(delta - box_1.offset)
-        # distance_in = th.min(delta, box_1.offset)
-        # loss =  th.linalg.norm(distance_out, ord=1, dim=-1) + alpha * th.linalg.norm(distance_in, ord=1, dim=-1)
-
-
-        
         dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper ) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
@@ -169,21 +134,14 @@ class Box():
 
     @staticmethod
     def box_order_score(box_1, box_2, alpha, negative, inverse=False):
-        
+        gamma = 0.1
         if inverse:
-            
-            distance = box_1.lower - box_2.center
+            distance = box_1.center - box_2.center + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
-            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
-
-            order_loss = alpha * extra_distance + order_loss
-            
         else:
-            distance = box_2.center - box_1.upper
+            distance = box_2.center - box_1.center + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
-            extra_distance = th.exp(-th.linalg.norm(distance, dim=-1, ord=1))
-            order_loss = alpha * extra_distance + order_loss
-            
+                        
         if not negative:
             corner_loss = Box.corner_loss(box_1)
         else:
