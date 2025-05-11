@@ -270,6 +270,7 @@ def main(args):
                           "negative_sample_size": args.negative_sample_size,
                           "transitive": args.transitive,
                           "data_path": args.data_path,
+                          "seed": args.seed
                           })
     else:
         args.hidden_dim = wandb.config.hidden_dim
@@ -280,6 +281,7 @@ def main(args):
         args.negative_sample_size = wandb.config.negative_sample_size
         args.transitive = wandb.config.transitive
         args.data_path = wandb.config.data_path
+        args.seed = wandb.config.seed
         
     if args.transitive == 'yes':
         args.transitive = True
