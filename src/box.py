@@ -115,7 +115,7 @@ class Box():
             order_loss[trans_not_inv] = trans_loss
             order_loss[trans_inv] = inv_loss
 
-        weight = 1#/hid_dim
+        weight = 1/hid_dim
         return weight*order_loss + inclusion_loss
 
     @staticmethod
