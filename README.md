@@ -14,9 +14,9 @@ conda activate geometre
 ## Data
 * WN18RR was obtained from from https://github.com/nelsonhuangzijian/WN18RR-QA
 * NELL and FB15k-237 are obtained from http://snap.stanford.edu/betae/KG_data.zip:
-```
-wget http://snap.stanford.edu/betae/KG_data.zip
-```
+  ```
+  wget http://snap.stanford.edu/betae/KG_data.zip
+  ```
 
 Place the data under `src/data` such that the file structure looks like tis:
 ```
@@ -27,7 +27,7 @@ Place the data under `src/data` such that the file structure looks like tis:
 └── src
     ├── data
         ├── FB15k-237-betae
-		├── NELL-betae
+	├── NELL-betae
         └── WN18RR-QA
 
 ```
