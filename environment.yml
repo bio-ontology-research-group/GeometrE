@@ -1,4 +1,4 @@
-name: transel
+name: geometre
 channels:
   - conda-forge
 dependencies:
