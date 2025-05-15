@@ -27,14 +27,14 @@ Place the data under `src/data` such that the file structure looks like tis:
 └── src
     ├── data
         ├── FB15k-237-betae
-	├── NELL-betae
+		├── NELL-betae
         └── WN18RR-QA
 
 ```
 ----
 ## Reproduce the results
 
-To reproduce the results please run the following commands:
+To reproduce the results please run the following commands below. We used Weights and Biases, you might want to input your username in the `src/main.py` script.
 
 * WN18RR
 ```
