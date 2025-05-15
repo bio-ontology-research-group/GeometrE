@@ -258,7 +258,7 @@ def load_data(args, tasks):
 
 def main(args):
     args.cuda = True
-    wandb_logger = wandb.init(entity="ferzcam", project="box_qa", name=args.description)
+    wandb_logger = wandb.init(entity="[insert your w&b user name here]", project="geometrE", name=args.description)
 
     
     if args.no_sweep:
