@@ -258,7 +258,7 @@ def load_data(args, tasks):
 
 def main(args):
     args.cuda = True
-    wandb_logger = wandb.init(entity="[insert your w&b user name here]", project="geometrE", name=args.description)
+    wandb_logger = wandb.init(entity="ferzcam", project="geometrE", name=args.description)
 
     
     if args.no_sweep:
@@ -469,7 +469,7 @@ def main(args):
         else:
             map_location="cpu"
         logging.info('Loading checkpoint %s...' % args.checkpoint_path)
-        checkpoint = torch.load(os.path.join(args.checkpoint_path, 'checkpoint'), map_location=map_location)
+        checkpoint = torch.load(os.path.join(args.checkpoint_path, 'checkpoint'), map_location=map_location, weights_only=False)
         init_step = checkpoint['step']
         model.load_state_dict(checkpoint['model_state_dict'])
 
