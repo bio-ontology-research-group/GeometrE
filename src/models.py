@@ -320,34 +320,59 @@ class KGReasoning(nn.Module):
         loss = cen_mul_loss + cen_add_loss + off_mul_loss + off_add_loss
         return loss
 
-    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False):
+    def cal_logit_box(self, entity_embedding, box_embedding, trans_inv, trans_not_inv, projection_dims, transitive=False, negative=False, negative_box=None, negation_indices=None):
         if transitive:
             logit = Box.box_composed_score_with_projection(box_embedding, entity_embedding, self.alpha, trans_inv, trans_not_inv, projection_dims, negative=negative, transitive=transitive)
         else:
             logit = Box.box_inclusion_score(box_embedding, entity_embedding, self.alpha, negative=negative)
-        
+
+        # Add exclusion score for queries with negative boxes
+        if negative_box is not None and negation_indices is not None:
+            # Extract entity embeddings and boxes for negation queries only
+            negation_entity_embedding = Box(entity_embedding.center[negation_indices], entity_embedding.offset[negation_indices])
+            exclusion_logit = Box.box_exclusion_score(negative_box, negation_entity_embedding, self.alpha, negative=negative)
+            # Add exclusion scores back to the full logit tensor at the correct indices
+            logit[negation_indices] = logit[negation_indices] + exclusion_logit
+
         return self.gamma - logit
 
     def forward_box(self, positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=False):
-        all_boxes, all_idxs, all_trans_masks, all_inv_masks, all_projection_dims = [], [], [], [], []
-        all_union_boxes, all_union_idxs, all_union_trans_masks, all_union_inv_masks, all_union_projection_dims = [], [], [], [], []
+        all_boxes, all_idxs, all_trans_masks, all_inv_masks, all_projection_dims, all_negative_boxes = [], [], [], [], [], []
+        all_union_boxes, all_union_idxs, all_union_trans_masks, all_union_inv_masks, all_union_projection_dims, all_union_negative_boxes = [], [], [], [], [], []
+
+        # Track the cumulative count of queries to map negative boxes to correct indices
+        query_count = 0
+        negation_indices = []  # Indices of queries with negation
+        negation_boxes_list = []  # Corresponding negative boxes
+
         for query_structure in batch_queries_dict:
             query_type = self.query_name_dict[query_structure]
+            batch_size = len(batch_queries_dict[query_structure])
+
             if 'u' in self.query_name_dict[query_structure]:
                 query_type = self.query_name_dict[self.transform_union_structure(query_structure)]
-                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type, transitive)
+                boxes, inv_mask, trans_mask, projection_dims, negative_box = self.embed_query_box(self.transform_union_query(batch_queries_dict[query_structure], query_structure), query_type, transitive)
                 all_union_boxes.append(boxes)
                 all_union_idxs.extend(batch_idxs_dict[query_structure])
                 all_union_trans_masks.append(trans_mask)
                 all_union_inv_masks.append(inv_mask)
                 all_union_projection_dims.append(projection_dims)
+                all_union_negative_boxes.append(negative_box)
             else:
-                boxes, inv_mask, trans_mask, projection_dims = self.embed_query_box(batch_queries_dict[query_structure], query_type, transitive)
+                boxes, inv_mask, trans_mask, projection_dims, negative_box = self.embed_query_box(batch_queries_dict[query_structure], query_type, transitive)
                 all_boxes.append(boxes)
                 all_idxs.extend(batch_idxs_dict[query_structure])
                 all_trans_masks.append(trans_mask)
                 all_inv_masks.append(inv_mask)
                 all_projection_dims.append(projection_dims)
+
+                # Track negation queries
+                if negative_box is not None:
+                    for i in range(len(boxes)):
+                        negation_indices.append(query_count + i)
+                    negation_boxes_list.append(negative_box)
+
+                query_count += len(boxes)
 
         if len(all_boxes) > 0:
             all_boxes = Box.cat(all_boxes, dim=0)
@@ -356,6 +381,16 @@ class KGReasoning(nn.Module):
             all_trans_masks = torch.cat(all_trans_masks, dim=0)
             all_inv_masks = torch.cat(all_inv_masks, dim=0)
             all_projection_dims = torch.cat(all_projection_dims, dim=0).long()
+
+            # Concatenate negative boxes
+            if len(negation_boxes_list) > 0:
+                all_negative_boxes = Box.cat(negation_boxes_list, dim=0)
+                all_negative_boxes.center = all_negative_boxes.center.unsqueeze(1)
+                all_negative_boxes.offset = all_negative_boxes.offset.unsqueeze(1)
+                negation_indices = torch.tensor(negation_indices, device=all_boxes.center.device)
+            else:
+                all_negative_boxes = None
+                negation_indices = None
         if len(all_union_boxes) > 0:
             all_union_boxes = Box.cat(all_union_boxes, dim=0)
             all_union_boxes.center = all_union_boxes.center.unsqueeze(1)
@@ -363,6 +398,8 @@ class KGReasoning(nn.Module):
             all_union_trans_masks = torch.cat(all_union_trans_masks, dim=0)
             all_union_inv_masks = torch.cat(all_union_inv_masks, dim=0)
             all_union_projection_dims = torch.cat(all_union_projection_dims, dim=0).long()
+            # Union queries don't have negation (for now)
+            all_union_negative_boxes = None
         if type(subsampling_weight) != type(None):
             subsampling_weight = subsampling_weight[all_idxs+all_union_idxs]
 
@@ -374,7 +411,7 @@ class KGReasoning(nn.Module):
                 else:
                     positive_center_embedding = self.center_embedding(positive_sample_regular).unsqueeze(1)
                 positive_box = Box(positive_center_embedding, as_point=True)
-                positive_logit = self.cal_logit_box(positive_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, transitive=transitive)
+                positive_logit = self.cal_logit_box(positive_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, transitive=transitive, negative_box=all_negative_boxes, negation_indices=negation_indices)
             else:
                 positive_logit = torch.Tensor([]).to(self.center_embedding.weight.device)
                 
@@ -385,7 +422,7 @@ class KGReasoning(nn.Module):
                 else:
                     positive_center_embedding = self.center_embedding(positive_sample_union).unsqueeze(1).unsqueeze(1)
                 positive_box = Box(positive_center_embedding, as_point=True)
-                positive_union_logit = self.cal_logit_box(positive_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, transitive=transitive)
+                positive_union_logit = self.cal_logit_box(positive_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, transitive=transitive, negative_box=all_union_negative_boxes, negation_indices=None)
                 positive_union_logit = positive_union_logit.unsqueeze(1).view(positive_union_logit.shape[0]//2, 2)
                 positive_union_logit = torch.max(positive_union_logit, dim=1)[0]
             else:
@@ -403,7 +440,7 @@ class KGReasoning(nn.Module):
                 else:
                     negative_center_embedding = self.center_embedding(negative_sample_regular.view(-1)).view(batch_size, negative_size, -1)
                 negative_box = Box(negative_center_embedding, as_point=True)
-                negative_logit = self.cal_logit_box(negative_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, negative=True, transitive=transitive)
+                negative_logit = self.cal_logit_box(negative_box, all_boxes, all_inv_masks, all_trans_masks, all_projection_dims, negative=True, transitive=transitive, negative_box=all_negative_boxes, negation_indices=negation_indices)
             else:
                 negative_logit = torch.Tensor([]).to(self.center_embedding.weight.device)
 
@@ -415,7 +452,7 @@ class KGReasoning(nn.Module):
                 else:
                     negative_center_embedding = self.center_embedding(negative_sample_union.view(-1)).view(batch_size, negative_size, -1).repeat(2, 1, 1)
                 negative_box = Box(negative_center_embedding, as_point=True)
-                negative_union_logit = self.cal_logit_box(negative_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, negative=True, transitive=transitive)
+                negative_union_logit = self.cal_logit_box(negative_box, all_union_boxes, all_union_inv_masks, all_union_trans_masks, all_union_projection_dims, negative=True, transitive=transitive, negative_box=all_union_negative_boxes, negation_indices=None)
                 negative_union_logit = negative_union_logit.unsqueeze(1).view(negative_union_logit.shape[0]//2, 2, -1)
                 negative_union_logit = torch.max(negative_union_logit, dim=1)[0]
             else:
@@ -432,7 +469,7 @@ class KGReasoning(nn.Module):
             all_answer_boxes = Box(self.center_embedding.weight, as_point=True)
         membership_logit = self.cal_membership_logit(all_answer_boxes, all_query_boxes)
         transitive_relation_logit = self.cal_transitive_relation_logit(self.transitive_ids, self.inverse_ids)
-        
+
         return positive_logit, negative_logit, membership_logit, transitive_relation_logit, subsampling_weight, all_idxs+all_union_idxs
     
     @staticmethod
@@ -456,6 +493,13 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
+        # Apply negation query reweighting to compensate for 10:1 imbalance
+        # if hasattr(args, 'negation_weight') and args.negation_weight != 1.0:
+            # for i, query_structure in enumerate(query_structures):
+                # query_name = model.query_name_dict[query_structure]
+                # if 'n' in query_name:  # negation query (2in, 3in, inp, pin, pni)
+                    # subsampling_weight[i] *= args.negation_weight
+
         positive_logit, negative_logit, membership_logit, transitive_relation_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
 
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
@@ -465,19 +509,13 @@ class KGReasoning(nn.Module):
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
 
-        # membership_loss = 0.1 * membership_logit.mean()
         membership_loss = -F.logsigmoid(membership_logit).mean()
         relation_loss = -F.logsigmoid(transitive_relation_logit).mean()
-        # relation_loss = transitive_relation_logit.mean()
 
-        # lambda_reg = 0.1
-        # reg = lambda_reg * (((model.center_mul.weight - 1.0) ** 2).mean() + ((model.center_add.weight) ** 2).mean() + ((model.offset_mul.weight - 1.0) ** 2).mean() + ((model.offset_add.weight) ** 2).mean())
-        
-        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss  + relation_loss
+        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss + relation_loss
         loss.backward()
         optimizer.step()
-        
-        
+
         log = {
             'positive_sample_loss': positive_sample_loss.item(),
             'negative_sample_loss': negative_sample_loss.item(),
@@ -485,7 +523,7 @@ class KGReasoning(nn.Module):
             'transitive_rel_loss': relation_loss.item(),
             'loss': loss.item()
         }
-        
+
         return log
 
     @staticmethod
@@ -511,7 +549,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit,_, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+                _, negative_logit, _, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)
@@ -615,7 +653,7 @@ class KGReasoning(nn.Module):
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
 
-                _, negative_logit,_, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
+                _, negative_logit, _, _, _, idxs = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 # argsort = torch.argsort(negative_logit, dim=1, descending=True)

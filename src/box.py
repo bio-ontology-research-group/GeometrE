@@ -124,12 +124,31 @@ class Box():
         dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
 
         loss = dist_outside + alpha * dist_inside
-                 
+
         if not negative:
             corner_loss = Box.corner_loss(box_1)
         else:
             corner_loss = th.zeros_like(loss)
         return loss + corner_loss
+
+    @staticmethod
+    def box_exclusion_score(box_1, box_2, alpha, negative=False):
+        """
+        Score for keeping box_2 (entity) OUTSIDE of box_1 (negative constraint).
+        Returns low score when entity is outside, high score when inside.
+        """
+        # Distance from being outside the box (0 if already outside)
+        dist_outside = th.linalg.norm(th.relu(box_2.center - box_1.upper) + th.relu(box_1.lower - box_2.center), dim=-1, ord=1)
+
+        # Distance from center when inside (measures how deep inside)
+        dist_inside = th.linalg.norm(box_1.center - th.min(box_1.upper, th.max(box_1.lower, box_2.center)), dim=-1, ord=1)
+
+        # Inverse of inclusion: penalize being inside, reward being outside
+        # When outside: dist_outside > 0, dist_inside = 0 -> score = -dist_outside (negative, good)
+        # When inside: dist_outside = 0, dist_inside > 0 -> score = alpha * dist_inside (positive, bad)
+        loss = -dist_outside + alpha * dist_inside
+
+        return loss
 
 
     @staticmethod
@@ -173,11 +192,3 @@ class Box():
         for box in boxes[1:]:
             intersection_box = Box._pair_intersection(intersection_box, box)
         return intersection_box
-
-    @staticmethod
-    def intersection_with_negation(position, *boxes, include_negated_component=False):
-        boxes = list(boxes)
-        position -= 1
-        _ = boxes.pop(position)
-        intermediate_intersection = Box.intersection(*boxes)
-        return intermediate_intersection
