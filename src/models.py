@@ -88,6 +88,12 @@ class KGReasoning(nn.Module):
         self.offset_mul = self.init_embedding(nrelation, self.relation_dim)
         self.offset_add = self.init_embedding(nrelation, self.relation_dim)
 
+        self.center_neg_mul = self.init_embedding(nrelation, self.relation_dim)
+        self.center_neg_add = self.init_embedding(nrelation, self.relation_dim)
+        self.offset_neg_mul = self.init_embedding(nrelation, self.relation_dim)
+        self.offset_neg_add = self.init_embedding(nrelation, self.relation_dim)
+
+        
     def init_embedding(self, num_embeddings, dimension):
         embedding = nn.Embedding(num_embeddings, dimension)
         nn.init.uniform_(
@@ -190,7 +196,9 @@ class KGReasoning(nn.Module):
         return self.center_embedding, self.offset_embedding
 
     def get_role_data(self):
-        return self.center_mul, self.center_add, self.offset_mul, self.offset_add
+        positive_data = self.center_mul, self.center_add, self.offset_mul, self.offset_add
+        negative_data = self.center_neg_mul, self.center_neg_add, self.offset_neg_mul, self.offset_neg_add
+        return positive_data, negative_data
 
             
     def embedding_1p(self, data, transitive):
@@ -512,7 +520,7 @@ class KGReasoning(nn.Module):
         membership_loss = -F.logsigmoid(membership_logit).mean()
         relation_loss = -F.logsigmoid(transitive_relation_logit).mean()
 
-        loss = (positive_sample_loss + negative_sample_loss)/2 + membership_loss + relation_loss
+        loss = (positive_sample_loss + negative_sample_loss)/2 + relation_loss # + membership_loss
         loss.backward()
         optimizer.step()
 

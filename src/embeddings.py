@@ -51,13 +51,14 @@ def get_role_data(role_data, transitive_ids, inverse_ids, transitive, index_tens
 def embedding_1p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     # (('e', ('r',)),): '1p'
     c, c_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     negative_box = None
     return Box(c, c_offset).transform(*transf_data), *transitive_data, negative_box
 
 def embedding_2p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c, c_offset = get_box_data(box_data, data[:, 0])
-
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     transf_data_2, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
 
@@ -67,6 +68,7 @@ def embedding_2p(data, box_data, role_data, transitive_ids, inverse_ids, transit
 
 def embedding_3p(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c, c_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
     transf_data_3, transitive_data = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
@@ -77,6 +79,7 @@ def embedding_3p(data, box_data, role_data, transitive_ids, inverse_ids, transit
 
 def embedding_2i(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
@@ -92,6 +95,7 @@ def embedding_2i(data, box_data, role_data, transitive_ids, inverse_ids, transit
 
 def embedding_3i(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
@@ -113,11 +117,12 @@ def embedding_2in(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r',)), ('e', ('r', 'n'))): '2in',
     # Return two boxes: positive and negative
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data, role_neg_data = role_data
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     # Compute negated component
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
-    transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
+    transf_data_2, _ = get_role_data(role_neg_data, transitive_ids, inverse_ids, transitive, data[:, 3])
 
     positive_box = Box(c_1, c_1_offset).transform(*transf_data_1)
     negative_box = Box(c_2, c_2_offset).transform(*transf_data_2)
@@ -131,6 +136,7 @@ def embedding_3in(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n')))
     # Return two boxes: positive (intersection) and negative
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data, role_neg_data = role_data
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
@@ -138,7 +144,7 @@ def embedding_3in(data, box_data, role_data, transitive_ids, inverse_ids, transi
 
     # Compute negated component
     c_3, c_3_offset = get_box_data(box_data, data[:, 4])
-    transf_data_3, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 5])
+    transf_data_3, _ = get_role_data(role_neg_data, transitive_ids, inverse_ids, transitive, data[:, 5])
 
     box_c_1 = Box(c_1, c_1_offset).transform(*transf_data_1)
     box_c_2 = Box(c_2, c_2_offset).transform(*transf_data_2)
@@ -155,6 +161,7 @@ def embedding_3in(data, box_data, role_data, transitive_ids, inverse_ids, transi
 def embedding_ip(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     # ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
 
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
@@ -172,6 +179,7 @@ def embedding_ip(data, box_data, role_data, transitive_ids, inverse_ids, transit
 def embedding_pi(data, box_data, role_data, transitive_ids, inverse_ids, transitive):
     # (('e', ('r', 'r')), ('e', ('r',))): 'pi',
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
     c_2, c_2_offset = get_box_data(box_data, data[:, 3])
@@ -190,8 +198,9 @@ def embedding_inp(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # ((('e', ('r',)), ('e', ('r', 'n'))), ('r',))
     # Keep as approximation (projection makes two-box approach difficult)
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data = role_data[0]
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
-
+    
     # Negated component (ignored in approximation)
     c_2, c_2_offset = get_box_data(box_data, data[:, 2])
     transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 3])
@@ -210,12 +219,13 @@ def embedding_pin(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # (('e', ('r', 'r')), ('e', ('r', 'n')))
     # Return two boxes: positive and negative
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data, role_neg_data = role_data
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
     transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
 
     # Compute negated component
     c_2, c_2_offset = get_box_data(box_data, data[:, 3])
-    transf_data_3, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 4])
+    transf_data_3, _ = get_role_data(role_neg_data, transitive_ids, inverse_ids, transitive, data[:, 4])
 
     positive_box = Box(c_1, c_1_offset).transform(*transf_data_1).transform(*transf_data_2)
     negative_box = Box(c_2, c_2_offset).transform(*transf_data_3)
@@ -230,8 +240,9 @@ def embedding_pni(data, box_data, role_data, transitive_ids, inverse_ids, transi
     # Return two boxes: positive and negative
     # Negated component (the first path has negation)
     c_1, c_1_offset = get_box_data(box_data, data[:, 0])
+    role_data, role_neg_data = role_data
     transf_data_1, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 1])
-    transf_data_2, _ = get_role_data(role_data, transitive_ids, inverse_ids, transitive, data[:, 2])
+    transf_data_2, _ = get_role_data(role_neg_data, transitive_ids, inverse_ids, transitive, data[:, 2])
 
     # Positive component
     c_2, c_2_offset = get_box_data(box_data, data[:, 4])
