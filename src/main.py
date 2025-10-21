@@ -346,7 +346,7 @@ def main(args):
     logging.info('#entity: %d' % nentity)
     logging.info('#relation: %d' % nrelation)
     logging.info('#max steps: %d' % args.max_steps)
-    logging.info('Evaluate unoins using: %s' % args.evaluate_union)
+    logging.info('Evaluate unions using: %s' % args.evaluate_union)
 
     train_queries, train_answers, transitive_train_answers, valid_queries, valid_tr_queries, valid_hard_answers, valid_easy_answers, test_queries, test_tr_queries, test_hard_answers, test_easy_answers, test_transitive_answers, transitive_ids, inverse_ids = load_data(args, tasks)        
 
