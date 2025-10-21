@@ -518,9 +518,13 @@ class KGReasoning(nn.Module):
         negative_sample_loss /= subsampling_weight.sum()
 
         membership_loss = -F.logsigmoid(membership_logit).mean()
-        relation_loss = -F.logsigmoid(transitive_relation_logit).mean()
 
-        loss = (positive_sample_loss + negative_sample_loss)/2 + relation_loss # + membership_loss
+        if args.transitive:
+            relation_loss = -F.logsigmoid(transitive_relation_logit).mean()
+        else:
+            relation_loss = torch.tensor(0.0).to(positive_sample_loss.device)
+        
+        loss = (positive_sample_loss + negative_sample_loss)/2 + relation_loss + membership_loss
         loss.backward()
         optimizer.step()
 
