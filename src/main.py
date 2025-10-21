@@ -67,7 +67,6 @@ def parse_args(args=None):
     parser.add_argument('--deductive_negative_sampling', action='store_true', help="include transitive triples on negative sampling filtering")
     parser.add_argument('--filter_deductive_triples', action='store_true', help="evaluate filtering on transitive triples" )
     parser.add_argument('--with_answer_embedding', action='store_true', help="use answer embeddings. Otherwise use box embeddings as answer")
-    parser.add_argument('--negation_weight', type=float, default=10.0, help="weight for negation queries in loss to compensate for imbalance")
     #######################
     
     parser.add_argument('--cuda', action='store_true', help='use GPU')
@@ -272,7 +271,6 @@ def main(args):
                           "transitive": args.transitive,
                           "data_path": args.data_path,
                           "seed": args.seed,
-                          "negation_weight": args.negation_weight
                           })
     else:
         args.hidden_dim = wandb.config.hidden_dim
@@ -284,9 +282,7 @@ def main(args):
         args.transitive = wandb.config.transitive
         args.data_path = wandb.config.data_path
         args.seed = wandb.config.seed
-        if hasattr(wandb.config, 'negation_weight'):
-            args.negation_weight = wandb.config.negation_weight
-        
+                    
     if args.transitive == 'yes':
         args.transitive = True
     elif args.transitive == 'no':
