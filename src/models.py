@@ -501,13 +501,6 @@ class KGReasoning(nn.Module):
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        # Apply negation query reweighting to compensate for 10:1 imbalance
-        # if hasattr(args, 'negation_weight') and args.negation_weight != 1.0:
-            # for i, query_structure in enumerate(query_structures):
-                # query_name = model.query_name_dict[query_structure]
-                # if 'n' in query_name:  # negation query (2in, 3in, inp, pin, pni)
-                    # subsampling_weight[i] *= args.negation_weight
-
         positive_logit, negative_logit, membership_logit, transitive_relation_logit, subsampling_weight, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict, transitive=args.transitive)
 
         negative_score = F.logsigmoid(-negative_logit).mean(dim=1)
