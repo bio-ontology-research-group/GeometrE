@@ -155,10 +155,10 @@ class Box():
     def box_order_score(box_1, box_2, alpha, negative, inverse=False):
         gamma = 0.1
         if inverse:
-            distance = box_1.center - box_2.center + gamma
+            distance = box_1.upper - box_2.center + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
         else:
-            distance = box_2.center - box_1.center + gamma
+            distance = box_2.center - box_1.lower + gamma
             order_loss = th.linalg.norm(th.relu(distance), dim=-1, ord=1)
                         
         if not negative:
