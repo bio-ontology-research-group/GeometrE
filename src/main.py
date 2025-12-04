@@ -62,6 +62,7 @@ def parse_args(args=None):
         usage='train.py [<args>] [-h | --help]'
     )
     #### new arguments ####
+    parser.add_argument('--wandb_username', type=str, help="WandB username for logging")
     parser.add_argument('--do_test_tr', action='store_true', help="do test on saturated transitive set")
     parser.add_argument('--plot_embeddings', action='store_true', help="plot embeddings")
     parser.add_argument('--deductive_negative_sampling', action='store_true', help="include transitive triples on negative sampling filtering")
@@ -258,7 +259,7 @@ def load_data(args, tasks):
 
 def main(args):
     args.cuda = True
-    wandb_logger = wandb.init(entity="ferzcam", project="geometrE", name=args.description)
+    wandb_logger = wandb.init(entity=args.wandb_username, project="geometrE", name=args.description)
 
     
     if args.no_sweep:
