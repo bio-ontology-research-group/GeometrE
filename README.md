@@ -48,6 +48,50 @@ Place the data under `src/data/` so that the file structure looks like this:
 
 ---
 
+## Scripts Overview
+
+| Script | Description |
+|--------|-------------|
+| `main.py` | **Entry point for training and evaluation.** Parses command-line arguments, loads datasets, manages the training loop with checkpointing, runs evaluation (MRR, Hits@1/3/10), and integrates with Weights & Biases for experiment tracking. |
+| `models.py` | **Core neural network model.** Adaptation of the `KGReasoning` class used in previous methods (BetaE, ConE, etc.) with entity/relation embeddings (centers and offsets), loss computation (positive/negative samples, membership, transitive regularization), and evaluation methods. |
+| `embeddings.py` | **Query embedding functions.** Implements geometric construction of GeometrE embeddings for all query types. | 
+| `box.py` | **Geometric box operations.** Defines the `Box` class with methods for intersection, transformation, projection, and scoring functions (inclusion, exclusion, order preservation). |
+| `dataloader.py` | **Data handling.** Provides PyTorch Dataset classes for training and testing, implements negative sampling strategies, and manages data iteration. |
+| `util.py` | **Utility functions.** Helper functions for data structure conversions, random seed setting, and mappings for transitive/inverse relations per dataset. |
+
+---
+
+## Hyperparameters
+
+### Grid Search Ranges
+
+The following hyperparameter ranges were used during grid search:
+
+| Hyperparameter | Values |
+|----------------|--------|
+| `alpha` | 0, 0.1, 0.2, 0.5 |
+| `gamma` | 10, 20, 40 |
+| `hidden_dim` (embedding size) | 100, 200, 400 |
+| `learning_rate` | 0.001, 0.0005, 0.0001 |
+| `with_answer_embedding` | yes, no |
+
+For the transitive loss function, we used `lambda = 0.1`.
+
+### Optimal Hyperparameters per Dataset
+
+| Hyperparameter | WN18RR | NELL | FB15k-237 |
+|----------------|--------|------|-----------|
+| `alpha` | 0.5 | 0.2 | 0.2 |
+| `gamma` | 20 | 10 | 20 |
+| `hidden_dim` | 400 | 400 | 400 |
+| `learning_rate` | 0.001 | 0.0005 | 0.0005 |
+| `with_answer_embedding` | yes | no | no |
+| `transitive` | yes | no | no |
+| `batch_size` | 1024 | 1024 | 1024 |
+| `negative_sample_size` | 64 | 64 | 64 |
+
+---
+
 ## Reproduce the Results
 
 ### Setup
